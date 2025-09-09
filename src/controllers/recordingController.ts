@@ -1,0 +1,306 @@
+import { Request, Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { AppError } from '../utils/errorHandler';
+import { AuthenticatedRequest, CreateRecordingRequest, UpdateRecordingRequest } from '../types';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+
+const prisma = new PrismaClient();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req: any, file: any, cb: any) => {
+    const uploadDir = 'uploads/recordings';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req: any, file: any, cb: any) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `recording-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  },
+  fileFilter: (req: any, file: any, cb: any) => {
+    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/webm'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError('Invalid file type. Only audio files are allowed.', 400));
+    }
+  }
+});
+
+export const uploadMiddleware = upload.single('recording');
+
+export const createRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId, transcript, duration, metadata }: CreateRecordingRequest = req.body;
+
+    // Validate class exists and user has access
+    const classRecord = await prisma.class.findUnique({
+      where: { id: classId },
+      include: { teacher: true }
+    });
+
+    if (!classRecord) {
+      throw new AppError('Class not found', 404);
+    }
+
+    if (classRecord.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    // Get file path if uploaded
+    const recordingUrl = req.file ? `/uploads/recordings/${req.file.filename}` : null;
+
+    const recording = await prisma.recording.create({
+      data: {
+        classId,
+        teacherId: req.user!.id,
+        transcript: transcript || '',
+        duration: duration || 0,
+        recordingUrl
+      },
+      include: {
+        class: true,
+        teacher: true
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: recording,
+      message: 'Recording created successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id },
+      include: {
+        class: true,
+        teacher: true,
+        analyses: true
+      }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    res.json({
+      success: true,
+      data: recording
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getClassRecordings = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Validate class access
+    const classRecord = await prisma.class.findUnique({
+      where: { id: classId }
+    });
+
+    if (!classRecord) {
+      throw new AppError('Class not found', 404);
+    }
+
+    if (classRecord.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    const [recordings, total] = await Promise.all([
+      prisma.recording.findMany({
+        where: { classId },
+        include: {
+          class: true,
+          teacher: true,
+          analyses: {
+            select: {
+              id: true,
+              status: true,
+              createdAt: true
+            }
+          }
+        },
+        skip,
+        take: Number(limit),
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.recording.count({
+        where: { classId }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: recordings,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const updateData: UpdateRecordingRequest = req.body;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    const updatedRecording = await prisma.recording.update({
+      where: { id },
+      data: updateData,
+      include: {
+        class: true,
+        teacher: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: updatedRecording,
+      message: 'Recording updated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    // Delete associated file if exists
+    if (recording.recordingUrl) {
+      const filePath = path.join(process.cwd(), 'public', recording.recordingUrl);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+
+    await prisma.recording.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Recording deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const downloadRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    if (!recording.recordingUrl) {
+      throw new AppError('No recording file available', 404);
+    }
+
+    const filePath = path.join(process.cwd(), 'public', recording.recordingUrl);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new AppError('Recording file not found', 404);
+    }
+
+    res.download(filePath);
+  } catch (error) {
+    next(error);
+  }
+};

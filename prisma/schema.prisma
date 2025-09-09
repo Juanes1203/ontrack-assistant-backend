@@ -1,0 +1,148 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users     User[]
+  classes   Class[]
+  students  Student[]
+
+  @@map("schools")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole @default(TEACHER)
+  schoolId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school    School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classes   Class[]
+  recordings Recording[]
+
+  @@map("users")
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  avatarUrl String?
+  schoolId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classStudents ClassStudent[]
+
+  @@map("students")
+}
+
+model Class {
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  location    String
+  schedule    String
+  maxStudents Int      @default(30)
+  teacherId   String
+  schoolId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  teacher     User          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  school      School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classStudents ClassStudent[]
+  recordings  Recording[]
+
+  @@map("classes")
+}
+
+model ClassStudent {
+  id        String   @id @default(cuid())
+  classId   String
+  studentId String
+  enrolledAt DateTime @default(now())
+  status    EnrollmentStatus @default(ACTIVE)
+
+  // Relations
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId])
+  @@map("class_students")
+}
+
+model Recording {
+  id          String   @id @default(cuid())
+  classId     String
+  teacherId   String
+  transcript  String?
+  duration    Int      @default(0) // in seconds
+  recordingUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  class   Class      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacher User       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  analyses AIAnalysis[]
+
+  @@map("recordings")
+}
+
+model AIAnalysis {
+  id           String        @id @default(cuid())
+  recordingId  String
+  analysisData Json
+  status       AnalysisStatus @default(PENDING)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  recording Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  @@map("ai_analyses")
+}
+
+// Enums
+enum UserRole {
+  TEACHER
+  ADMIN
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AnalysisStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
