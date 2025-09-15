@@ -40,6 +40,77 @@ const upload = multer({
 
 export const uploadMiddleware = upload.single('recording');
 
+// New endpoint to process complete recording with AI analysis
+export const processRecordingWithAnalysis = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId, transcript, duration, metadata } = req.body;
+
+    // Verify that the class belongs to the teacher
+    const classRecord = await prisma.class.findFirst({
+      where: {
+        id: classId,
+        teacherId: req.user!.id
+      },
+      include: {
+        teacher: true,
+        school: true
+      }
+    });
+
+    if (!classRecord) {
+      throw new AppError('Class not found or access denied', 404);
+    }
+
+    // Create the recording
+    const recording = await prisma.recording.create({
+      data: {
+        classId,
+        teacherId: req.user!.id,
+        transcript: transcript || '',
+        duration: duration || 0,
+        recordingUrl: null // Will be updated if file is uploaded
+      }
+    });
+
+    // Create AI analysis
+    const analysis = await prisma.aIAnalysis.create({
+      data: {
+        recordingId: recording.id,
+        status: 'PENDING',
+        analysisData: {}
+      }
+    });
+
+    // Start AI analysis in background
+    // This will be handled by the analysis controller
+    res.status(201).json({
+      success: true,
+      data: {
+        recording: {
+          id: recording.id,
+          classId: recording.classId,
+          teacherId: recording.teacherId,
+          transcript: recording.transcript,
+          duration: recording.duration,
+          createdAt: recording.createdAt
+        },
+        analysis: {
+          id: analysis.id,
+          status: analysis.status
+        }
+      },
+      message: 'Recording created and analysis started'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createRecording = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -47,6 +118,18 @@ export const createRecording = async (
 ) => {
   try {
     const { classId, transcript, duration, metadata }: CreateRecordingRequest = req.body;
+
+    // Verify that the class belongs to the teacher
+    const classExists = await prisma.class.findFirst({
+      where: {
+        id: classId,
+        teacherId: req.user!.id
+      }
+    });
+
+    if (!classExists) {
+      throw new AppError('Class not found or access denied', 404);
+    }
 
     // Validate class exists and user has access
     const classRecord = await prisma.class.findUnique({

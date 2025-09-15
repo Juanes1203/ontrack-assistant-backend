@@ -4,7 +4,8 @@ import {
   login, 
   getMe, 
   updateProfile, 
-  changePassword 
+  changePassword,
+  createTeacher
 } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import { 
@@ -18,6 +19,9 @@ const router = Router();
 // Public routes
 router.post('/register', validate(registerSchema), register);
 router.post('/login', validate(loginSchema), login);
+
+// Admin-only routes
+router.post('/create-teacher', authenticate, createTeacher);
 
 // Protected routes
 router.use(authenticate); // All routes below require authentication

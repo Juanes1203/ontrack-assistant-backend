@@ -6,7 +6,8 @@ import {
   updateRecording,
   deleteRecording,
   downloadRecording,
-  uploadMiddleware
+  uploadMiddleware,
+  processRecordingWithAnalysis
 } from '../controllers/recordingController';
 import { authenticate, authorizeResource } from '../middleware/auth';
 import { validate, createRecordingSchema, updateRecordingSchema } from '../utils/validation';
@@ -15,6 +16,9 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Process recording with AI analysis (no file upload)
+router.post('/process', processRecordingWithAnalysis);
 
 // Create recording (with file upload)
 router.post('/', uploadMiddleware, validate(createRecordingSchema), createRecording);

@@ -73,6 +73,63 @@ export const register = async (
   }
 };
 
+export const createTeacher = async (
+  req: Request<{}, {}, Omit<RegisterRequest, 'role'>>,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email, password, firstName, lastName, schoolId } = req.body;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      throw new AppError('User already exists with this email', 400);
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create teacher user
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        role: 'TEACHER',
+        schoolId: schoolId || 'default-school',
+      },
+      include: {
+        school: true
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          schoolId: user.schoolId,
+          school: user.school,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        }
+      },
+      message: 'Teacher created successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const login = async (
   req: Request<{}, {}, LoginRequest>,
   res: Response,
