@@ -1,0 +1,109 @@
+Profesor: Buenos días estudiantes, hoy vamos a continuar con nuestro tema de álgebra lineal. ¿Recuerdan lo que vimos la clase pasada sobre matrices?
+
+Estudiante: Sí profesor, vimos la suma y multiplicación de matrices.
+
+Profesor: Exacto, muy bien. Hoy vamos a profundizar en un concepto muy importante: los determinantes. El determinante de una matriz es un número especial que nos da información muy valiosa sobre la matriz.
+
+Estudiante: ¿Para qué sirve el determinante profesor?
+
+Profesor: Excelente pregunta. El determinante nos dice si una matriz es invertible, nos ayuda a resolver sistemas de ecuaciones lineales, y también nos da el área o volumen que representa la transformación lineal.
+
+Estudiante: ¿Cómo se calcula el determinante?
+
+Profesor: Para una matriz de 2x2, la fórmula es muy simple: si tenemos la matriz A con elementos a, b, c, d, entonces el determinante es ad menos bc. Vamos a ver un ejemplo.
+
+Estudiante: ¿Puede mostrarnos un ejemplo numérico?
+
+Profesor: Por supuesto. Tomemos la matriz 3, 1, 4, 2. El determinante sería 3 por 2 menos 1 por 4, que es 6 menos 4, igual a 2.
+
+Estudiante: ¿Y para matrices más grandes?
+
+Profesor: Para matrices de 3x3 usamos la regla de Sarrus, y para matrices más grandes usamos el método de Laplace o eliminación gaussiana. Pero hoy nos enfocaremos en matrices 2x2.
+
+Estudiante: ¿Qué pasa si el determinante es cero?
+
+Profesor: Muy buena pregunta. Si el determinante es cero, la matriz no es invertible y el sistema de ecuaciones asociado puede tener infinitas soluciones o ninguna solución.
+
+Estudiante: ¿Puede explicarnos por qué?
+
+Profesor: Claro. Cuando el determinante es cero, significa que las filas de la matriz son linealmente dependientes, es decir, una fila es múltiplo de otra, lo que reduce la información disponible para resolver el sistema.
+
+Estudiante: ¿Hay alguna forma visual de entender esto?
+
+Profesor: Sí, excelente pregunta. Si pensamos en las transformaciones lineales, un determinante cero significa que la transformación colapsa el espacio en una dimensión menor, perdiendo información en el proceso.
+
+Estudiante: ¿Esto se relaciona con los valores propios?
+
+Profesor: ¡Excelente conexión! Sí, los valores propios están directamente relacionados con el determinante. De hecho, el producto de todos los valores propios es igual al determinante de la matriz.
+
+Estudiante: ¿Podemos ver un ejemplo más complejo?
+
+Profesor: Por supuesto. Tomemos la matriz 2, 3, 1, 4. Calculen el determinante. ¿Alguien quiere intentar?
+
+Estudiante: Sería 2 por 4 menos 3 por 1, que es 8 menos 3, igual a 5.
+
+Profesor: ¡Perfecto! Muy bien calculado. Ahora, ¿qué nos dice este determinante de 5?
+
+Estudiante: Que la matriz es invertible.
+
+Profesor: Correcto, y además nos dice que la transformación asociada preserva la orientación y escala el área por un factor de 5.
+
+Estudiante: ¿Qué significa preservar la orientación?
+
+Profesor: Significa que si tenemos un triángulo con vértices en sentido horario, después de la transformación seguirá teniendo los vértices en sentido horario, no se invertirá.
+
+Estudiante: ¿Y si el determinante fuera negativo?
+
+Profesor: Excelente pregunta. Si el determinante es negativo, la transformación invierte la orientación, es decir, convierte figuras en sentido horario en sentido antihorario y viceversa.
+
+Estudiante: ¿Esto tiene aplicaciones prácticas?
+
+Profesor: Absolutamente. Los determinantes se usan en gráficos por computadora, en física para calcular momentos de inercia, en economía para análisis de sistemas, y en muchas otras áreas.
+
+Estudiante: ¿Podemos hacer más ejercicios?
+
+Profesor: Por supuesto. Vamos a practicar con varias matrices. Primero, calculen el determinante de la matriz 1, 2, 3, 4.
+
+Estudiante: Sería 1 por 4 menos 2 por 3, que es 4 menos 6, igual a -2.
+
+Profesor: ¡Excelente! Y como es negativo, ¿qué nos dice?
+
+Estudiante: Que la matriz invierte la orientación.
+
+Profesor: Perfecto. Ahora, ¿qué pasa si tenemos una matriz con determinante muy pequeño, como 0.001?
+
+Estudiante: ¿Significa que la matriz está casi singular?
+
+Profesor: ¡Exacto! Una matriz con determinante muy pequeño está cerca de ser singular, lo que puede causar problemas numéricos en los cálculos.
+
+Estudiante: ¿Cómo podemos evitar estos problemas?
+
+Profesor: Buena pregunta. Podemos usar técnicas de regularización, como agregar un pequeño valor a la diagonal, o usar métodos más robustos como la descomposición QR.
+
+Estudiante: ¿Podemos ver un ejemplo de esto?
+
+Profesor: Claro, pero eso será para la próxima clase. Por hoy, asegúrense de entender bien el concepto de determinante y practiquen con varios ejemplos.
+
+Estudiante: ¿Hay alguna fórmula mnemotécnica para recordar la fórmula del determinante?
+
+Profesor: Sí, pueden pensar en "diagonal principal menos diagonal secundaria" o "arriba izquierda por abajo derecha menos arriba derecha por abajo izquierda".
+
+Estudiante: ¿Y para matrices 3x3?
+
+Profesor: Para 3x3 usamos la regla de Sarrus, que es más compleja pero sigue el mismo principio. La veremos la próxima clase.
+
+Estudiante: ¿Podemos hacer un resumen de lo que aprendimos hoy?
+
+Profesor: Por supuesto. Hoy aprendimos que el determinante es un número que caracteriza una matriz, nos dice si es invertible, preserva o invierte la orientación, y escala el área. Es fundamental para resolver sistemas de ecuaciones y entender transformaciones lineales.
+
+Estudiante: ¿Hay algo más que debamos saber?
+
+Profesor: Sí, practiquen mucho con ejemplos numéricos y traten de visualizar las transformaciones geométricas. La próxima clase veremos determinantes de matrices 3x3 y sus aplicaciones.
+
+Estudiante: ¿Cuándo es la próxima clase?
+
+Profesor: La próxima clase es el miércoles a la misma hora. Traigan sus dudas y estén listos para más ejercicios.
+
+Estudiante: Gracias profesor, la clase estuvo muy clara.
+
+Profesor: De nada, me alegra que hayan entendido. Recuerden hacer los ejercicios del libro, páginas 45 a 50. ¡Hasta el miércoles!

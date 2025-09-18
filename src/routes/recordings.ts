@@ -7,7 +7,8 @@ import {
   deleteRecording,
   downloadRecording,
   uploadMiddleware,
-  processRecordingWithAnalysis
+  processRecordingWithAnalysis,
+  uploadAndTranscribeAudio
 } from '../controllers/recordingController';
 import { authenticate, authorizeResource } from '../middleware/auth';
 import { validate, createRecordingSchema, updateRecordingSchema } from '../utils/validation';
@@ -19,6 +20,9 @@ router.use(authenticate);
 
 // Process recording with AI analysis (no file upload)
 router.post('/process', processRecordingWithAnalysis);
+
+// Upload and transcribe audio file
+router.post('/upload-transcribe', uploadMiddleware, uploadAndTranscribeAudio);
 
 // Create recording (with file upload)
 router.post('/', uploadMiddleware, validate(createRecordingSchema), createRecording);

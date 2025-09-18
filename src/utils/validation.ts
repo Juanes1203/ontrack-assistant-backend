@@ -19,9 +19,13 @@ export const registerSchema = Joi.object({
 export const createClassSchema = Joi.object({
   name: Joi.string().min(2).max(100).required(),
   subject: Joi.string().min(2).max(100).required(),
-  location: Joi.string().min(2).max(100).required(),
   schedule: Joi.string().min(2).max(100).required(),
-  maxStudents: Joi.number().integer().min(1).max(100).default(30),
+  // Los siguientes campos se asignarán por defecto en el controlador
+  location: Joi.string().min(2).max(100).optional(),
+  maxStudents: Joi.number().integer().min(1).max(100).optional(),
+  description: Joi.string().max(500).optional(),
+  startTime: Joi.string().optional(),
+  endTime: Joi.string().optional(),
 });
 
 export const updateClassSchema = Joi.object({
@@ -30,6 +34,9 @@ export const updateClassSchema = Joi.object({
   location: Joi.string().min(2).max(100).optional(),
   schedule: Joi.string().min(2).max(100).optional(),
   maxStudents: Joi.number().integer().min(1).max(100).optional(),
+  description: Joi.string().max(500).optional(),
+  startTime: Joi.string().optional(),
+  endTime: Joi.string().optional(),
 });
 
 export const addStudentsToClassSchema = Joi.object({
@@ -81,13 +88,16 @@ export const paginationSchema = Joi.object({
 // Validation middleware
 export const validate = (schema: Joi.ObjectSchema) => {
   return (req: any, res: any, next: any) => {
+    console.log('Validation middleware - validating data:', req.body);
     const { error } = schema.validate(req.body);
     if (error) {
+      console.log('Validation error:', error.details);
       return res.status(400).json({
         success: false,
         error: error.details[0].message,
       });
     }
+    console.log('Validation passed');
     next();
   };
 };

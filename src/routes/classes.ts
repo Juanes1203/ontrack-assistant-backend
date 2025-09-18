@@ -6,7 +6,10 @@ import {
   updateClass,
   deleteClass,
   addStudentsToClass,
-  removeStudentFromClass
+  removeStudentFromClass,
+  startClassRecording,
+  stopClassRecording,
+  getClassWithAnalyses
 } from '../controllers/classController';
 import { authenticate, authorize, authorizeResource } from '../middleware/auth';
 import { validate, validateQuery, createClassSchema, updateClassSchema, addStudentsToClassSchema, paginationSchema } from '../utils/validation';
@@ -36,5 +39,14 @@ router.post('/:id/students', authorizeResource('class'), validate(addStudentsToC
 
 // Remove student from class
 router.delete('/:id/students/:studentId', authorizeResource('class'), removeStudentFromClass);
+
+// Start class recording
+router.post('/:id/recordings/start', authorizeResource('class'), startClassRecording);
+
+// Stop class recording
+router.post('/:id/recordings/:recordingId/stop', authorizeResource('class'), stopClassRecording);
+
+// Get class with analyses
+router.get('/:id/analyses', authorizeResource('class'), getClassWithAnalyses);
 
 export default router;

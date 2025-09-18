@@ -11,15 +11,31 @@ async function analyzeWithStraico(analysisId: string, transcript: string) {
   const prisma = new PrismaClient();
   
   try {
-    console.log('Starting Straico analysis for analysisId:', analysisId);
+    console.log('🚀 Starting Straico analysis for analysisId:', analysisId);
+    console.log('📊 Transcript length:', transcript.length, 'characters');
+    console.log('📝 Transcript preview:', transcript.substring(0, 100) + '...');
     
-    const systemPrompt = `Eres un analista educativo experto en la Evaluación de Carácter Diagnóstico Formativa (ECDF) para docentes. Analiza la siguiente transcripción de clase y proporciona un análisis detallado basado en los criterios de evaluación ECDF. Enfócate en identificar aspectos clave de la práctica docente según los criterios establecidos. IMPORTANTE: Proporciona TODO el análisis en español.
+    const systemPrompt = `Eres un analista educativo experto en la Evaluación de Carácter Diagnóstico Formativa (ECDF) para docentes. Analiza la siguiente transcripción de clase y proporciona un análisis detallado basado en los criterios de evaluación ECDF y los 6 elementos clave de análisis pedagógico. Enfócate en identificar aspectos clave de la práctica docente según los criterios establecidos. IMPORTANTE: Proporciona TODO el análisis en español.
 
 La transcripción incluye intervenciones de profesores y estudiantes, identificados por sus roles. Analiza la interacción entre ellos y cómo contribuye al aprendizaje.
 
+CRITERIOS ECDF:
+- ESTRUCTURA: Organización, secuencia lógica, objetivos claros
+- CONTENIDO: Precisión, profundidad, relevancia, actualización
+- DINÁMICA: Interacción, participación, metodología, recursos
+- FORMACIÓN: Desarrollo de competencias, evaluación, retroalimentación
+
+6 ELEMENTOS CLAVE:
+1. RESUMEN: Síntesis general de la clase
+2. CONCEPTOS: Ideas principales y conceptos clave
+3. EJEMPLOS: Casos prácticos y ejemplos utilizados
+4. PREGUNTAS: Interrogantes planteadas y su calidad
+5. CONEXIONES: Relaciones entre conceptos y temas
+6. EVALUACIÓN: Puntuación general y recomendaciones
+
 IMPORTANTE: Responde SOLO con el JSON del análisis, sin ningún texto adicional antes o después.`;
 
-    const userPrompt = `Por favor, analiza esta transcripción de clase y proporciona un análisis estructurado en el siguiente formato JSON, basado en los criterios de la Evaluación de Carácter Diagnóstico Formativa (ECDF):
+    const userPrompt = `Por favor, analiza esta transcripción de clase y proporciona un análisis estructurado en el siguiente formato JSON, basado en los criterios de la Evaluación de Carácter Diagnóstico Formativa (ECDF) y los 6 elementos clave:
 
 {
   "summary": {
@@ -28,32 +44,80 @@ IMPORTANTE: Responde SOLO con el JSON del análisis, sin ningún texto adicional
     "duration": "string",
     "participants": "number"
   },
-  "keyConcepts": [
+  "ecdfAnalysis": {
+    "structure": {
+      "organization": "string",
+      "logicalSequence": "string",
+      "clearObjectives": "string",
+      "score": "number (1-10)"
+    },
+    "content": {
+      "accuracy": "string",
+      "depth": "string",
+      "relevance": "string",
+      "upToDate": "string",
+      "score": "number (1-10)"
+    },
+    "dynamics": {
+      "interaction": "string",
+      "participation": "string",
+      "methodology": "string",
+      "resources": "string",
+      "score": "number (1-10)"
+    },
+    "formation": {
+      "competenceDevelopment": "string",
+      "evaluation": "string",
+      "feedback": "string",
+      "score": "number (1-10)"
+    }
+  },
+  "concepts": [
     {
-      "concept": "string",
+      "name": "string",
       "description": "string",
       "importance": "string",
       "examples": ["string"]
     }
   ],
-  "studentParticipation": {
-    "totalInterventions": "number",
-    "activeStudents": "number",
-    "participationRate": "number",
-    "qualityScore": "number"
-  },
-  "keyMoments": [
+  "examples": [
     {
-      "timestamp": "string",
+      "type": "string",
       "description": "string",
-      "importance": "string"
+      "effectiveness": "string",
+      "context": "string"
     }
   ],
-  "suggestions": ["string"],
+  "questions": [
+    {
+      "question": "string",
+      "type": "string",
+      "quality": "string",
+      "purpose": "string"
+    }
+  ],
+  "connections": [
+    {
+      "from": "string",
+      "to": "string",
+      "type": "string",
+      "strength": "string",
+      "explanation": "string"
+    }
+  ],
+  "moments": [
+    {
+      "timestamp": "string",
+      "type": "string",
+      "description": "string",
+      "significance": "string"
+    }
+  ],
   "evaluation": {
     "overallScore": "number",
     "strengths": ["string"],
-    "areasForImprovement": ["string"]
+    "areasForImprovement": ["string"],
+    "recommendations": ["string"]
   }
 }
 
@@ -71,6 +135,7 @@ ${transcript}`;
 
     console.log('Sending request to Straico API...');
     
+    console.log('📡 Sending request to Straico API...');
     const response = await fetch(STRAICO_API_URL, {
       method: 'POST',
       headers: {
@@ -81,13 +146,16 @@ ${transcript}`;
       body: JSON.stringify(requestBody)
     });
 
+    console.log('📡 Straico API response status:', response.status);
+    
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
+      console.error('❌ Straico API error:', response.status, response.statusText, errorData);
       throw new Error(`Straico API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
     }
 
     const data: any = await response.json();
-    console.log('Received response from Straico API');
+    console.log('✅ Straico API response received, processing...');
     
     const firstModelKey = Object.keys(data.data.completions)[0];
     const completion = data.data.completions[firstModelKey].completion;
@@ -114,12 +182,12 @@ ${transcript}`;
     await prisma.aIAnalysis.update({
       where: { id: analysisId },
       data: {
-        analysisData: analysisData,
+        analysisData: JSON.stringify(analysisData),
         status: 'COMPLETED'
       }
     });
 
-    console.log('Analysis completed and saved to database');
+    console.log('✅ Analysis completed and saved to database for analysisId:', analysisId);
     
   } catch (error) {
     console.error('Error in Straico analysis:', error);
@@ -129,9 +197,9 @@ ${transcript}`;
       where: { id: analysisId },
       data: {
         status: 'FAILED',
-        analysisData: {
+        analysisData: JSON.stringify({
           error: 'Error en el análisis de IA: ' + (error instanceof Error ? error.message : 'Unknown error')
-        }
+        })
       }
     });
     
@@ -142,6 +210,35 @@ ${transcript}`;
 }
 
 const prisma = new PrismaClient();
+
+// Function to process analysis automatically when recording is stopped
+export const processRecordingAnalysis = async (recordingId: string, transcript: string) => {
+  try {
+    console.log('🔄 Processing analysis for recording:', recordingId);
+    console.log('📝 Transcript length:', transcript.length, 'characters');
+    
+    // Find the analysis for this recording
+    const analysis = await prisma.aIAnalysis.findFirst({
+      where: { recordingId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!analysis) {
+      console.error('❌ No analysis found for recording:', recordingId);
+      return;
+    }
+
+    console.log('✅ Found analysis record:', analysis.id, 'Status:', analysis.status);
+    console.log('🚀 Starting Straico analysis...');
+
+    // Start AI analysis with Straico API
+    await analyzeWithStraico(analysis.id, transcript);
+    
+    console.log('✅ Analysis processing completed for recording:', recordingId);
+  } catch (error) {
+    console.error('❌ Error processing recording analysis:', error);
+  }
+};
 
 export const analyzeTranscript = async (
   req: AuthenticatedRequest,
@@ -180,10 +277,10 @@ export const analyzeTranscript = async (
     const analysis = await prisma.aIAnalysis.create({
       data: {
         recordingId: recording.id,
-        analysisData: {
+        analysisData: JSON.stringify({
           status: 'pending',
           message: 'Análisis en progreso...'
-        },
+        }),
         status: 'PENDING'
       }
     });
@@ -195,9 +292,9 @@ export const analyzeTranscript = async (
         where: { id: analysis.id },
         data: {
           status: 'FAILED',
-          analysisData: {
+          analysisData: JSON.stringify({
             error: 'Error en el análisis de IA: ' + error.message
-          }
+          })
         }
       });
     });
@@ -350,6 +447,96 @@ export const deleteAnalysis = async (
     res.json({
       success: true,
       message: 'Analysis deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Debug endpoint to check analysis status
+export const debugAnalysisStatus = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId } = req.params;
+    
+    // Get all analyses for the class
+    const analyses = await prisma.aIAnalysis.findMany({
+      where: {
+        recording: {
+          classId: classId
+        }
+      },
+      include: {
+        recording: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            createdAt: true,
+            transcript: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        classId,
+        totalAnalyses: analyses.length,
+        analyses: analyses.map(a => ({
+          id: a.id,
+          status: a.status,
+          createdAt: a.createdAt,
+          analysisData: a.analysisData ? JSON.parse(a.analysisData) : null,
+          recording: a.recording
+        }))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Nuevo endpoint para ver todos los análisis sin autenticación (solo para debug)
+export const getAllAnalyses = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const analyses = await prisma.aIAnalysis.findMany({
+      include: {
+        recording: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            createdAt: true,
+            transcript: true,
+            classId: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalAnalyses: analyses.length,
+        analyses: analyses.map(a => ({
+          id: a.id,
+          status: a.status,
+          createdAt: a.createdAt,
+          analysisData: a.analysisData ? JSON.parse(a.analysisData) : null,
+          recording: a.recording
+        }))
+      }
     });
   } catch (error) {
     next(error);

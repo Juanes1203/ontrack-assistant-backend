@@ -71,6 +71,9 @@ export interface CreateClassRequest {
   location: string;
   schedule: string;
   maxStudents: number;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface UpdateClassRequest extends Partial<CreateClassRequest> {
@@ -110,6 +113,20 @@ export interface CreateRecordingRequest {
   transcript?: string;
   duration?: number;
   metadata?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface StartRecordingRequest {
+  classId: string;
+  title?: string;
+  description?: string;
+}
+
+export interface StopRecordingRequest {
+  recordingId: string;
+  transcript?: string;
+  duration?: number;
 }
 
 export interface UpdateRecordingRequest {
@@ -134,4 +151,11 @@ export interface JwtPayload {
 }
 
 // Re-export Prisma types
-export { User, School, Class, Student, Recording, AIAnalysis, UserRole, EnrollmentStatus, AnalysisStatus } from '@prisma/client';
+export { User, School, Class, Student, Recording, AIAnalysis } from '@prisma/client';
+
+// Define enum types as string unions for SQLite compatibility
+export type UserRole = 'TEACHER' | 'ADMIN';
+export type EnrollmentStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+export type ClassStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type RecordingStatus = 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type AnalysisStatus = 'PENDING' | 'COMPLETED' | 'FAILED';

@@ -5,6 +5,7 @@ import { AuthenticatedRequest, CreateRecordingRequest, UpdateRecordingRequest } 
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { TranscriptionService } from '../services/transcriptionService';
 
 const prisma = new PrismaClient();
 
@@ -81,7 +82,7 @@ export const processRecordingWithAnalysis = async (
       data: {
         recordingId: recording.id,
         status: 'PENDING',
-        analysisData: {}
+        analysisData: JSON.stringify({})
       }
     });
 
@@ -383,6 +384,120 @@ export const downloadRecording = async (
     }
 
     res.download(filePath);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// New function to upload and transcribe audio
+export const uploadAndTranscribeAudio = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId, title, description } = req.body;
+
+    if (!req.file) {
+      throw new AppError('No audio file provided', 400);
+    }
+
+    // Verify that the class belongs to the teacher
+    const classRecord = await prisma.class.findFirst({
+      where: {
+        id: classId,
+        teacherId: req.user!.id
+      }
+    });
+
+    if (!classRecord) {
+      throw new AppError('Class not found or access denied', 404);
+    }
+
+    // Create recording entry
+    const recording = await prisma.recording.create({
+      data: {
+        classId,
+        teacherId: req.user!.id,
+        title: title || `${classRecord.name} - ${new Date().toLocaleString()}`,
+        description: description || '',
+        recordingUrl: `/uploads/recordings/${req.file.filename}`,
+        status: 'IN_PROGRESS'
+      }
+    });
+
+    // Start transcription in background
+    const filePath = path.join(process.cwd(), 'uploads', 'recordings', req.file.filename);
+    
+    TranscriptionService.transcribeAudio(filePath)
+      .then(async (transcriptionResult) => {
+        try {
+          // Process the transcript
+          const processedTranscript = TranscriptionService.processTranscript(transcriptionResult.text);
+          
+          // Update recording with transcript
+          await prisma.recording.update({
+            where: { id: recording.id },
+            data: {
+              transcript: processedTranscript,
+              duration: Math.round(transcriptionResult.duration),
+              status: 'COMPLETED'
+            }
+          });
+
+          // Create AI analysis entry
+          const analysis = await prisma.aIAnalysis.create({
+            data: {
+              recordingId: recording.id,
+              status: 'PENDING',
+              analysisData: JSON.stringify({
+                status: 'pending',
+                message: 'Análisis en progreso...'
+              })
+            }
+          });
+
+          // Start AI analysis
+          const { processRecordingAnalysis } = await import('./analysisController');
+          processRecordingAnalysis(recording.id, processedTranscript).catch(error => {
+            console.error('Error starting analysis:', error);
+          });
+
+          console.log('Transcription and analysis completed for recording:', recording.id);
+        } catch (error) {
+          console.error('Error updating recording with transcript:', error);
+          
+          // Update recording status to failed
+          await prisma.recording.update({
+            where: { id: recording.id },
+            data: { status: 'FAILED' }
+          });
+        }
+      })
+      .catch(async (error) => {
+        console.error('Error in transcription:', error);
+        
+        // Update recording status to failed
+        await prisma.recording.update({
+          where: { id: recording.id },
+          data: { status: 'FAILED' }
+        });
+      });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        recording: {
+          id: recording.id,
+          classId: recording.classId,
+          title: recording.title,
+          status: recording.status,
+          createdAt: recording.createdAt
+        }
+      },
+      message: 'Audio uploaded and transcription started'
+    });
+
   } catch (error) {
     next(error);
   }

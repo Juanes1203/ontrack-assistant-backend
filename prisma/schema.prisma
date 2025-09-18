@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model School {
@@ -31,7 +31,7 @@ model User {
   password  String
   firstName String
   lastName  String
-  role      UserRole @default(TEACHER)
+  role      String   @default("TEACHER")
   schoolId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -70,6 +70,10 @@ model Class {
   maxStudents Int      @default(30)
   teacherId   String
   schoolId    String
+  status      String   @default("SCHEDULED")
+  description String?
+  startTime   DateTime?
+  endTime     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -87,7 +91,7 @@ model ClassStudent {
   classId   String
   studentId String
   enrolledAt DateTime @default(now())
-  status    EnrollmentStatus @default(ACTIVE)
+  status    String   @default("ACTIVE")
 
   // Relations
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
@@ -104,6 +108,9 @@ model Recording {
   transcript  String?
   duration    Int      @default(0) // in seconds
   recordingUrl String?
+  status      String   @default("IN_PROGRESS")
+  title       String?
+  description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -118,8 +125,8 @@ model Recording {
 model AIAnalysis {
   id           String        @id @default(cuid())
   recordingId  String
-  analysisData Json
-  status       AnalysisStatus @default(PENDING)
+  analysisData String        // JSON as string for SQLite
+  status       String        @default("PENDING")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -129,20 +136,10 @@ model AIAnalysis {
   @@map("ai_analyses")
 }
 
-// Enums
-enum UserRole {
-  TEACHER
-  ADMIN
-}
-
-enum EnrollmentStatus {
-  ACTIVE
-  INACTIVE
-  SUSPENDED
-}
-
-enum AnalysisStatus {
-  PENDING
-  COMPLETED
-  FAILED
-}
+// Note: SQLite doesn't support enums, using strings instead
+// Valid values:
+// UserRole: "TEACHER", "ADMIN"
+// EnrollmentStatus: "ACTIVE", "INACTIVE", "SUSPENDED"
+// ClassStatus: "SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"
+// RecordingStatus: "IN_PROGRESS", "COMPLETED", "FAILED", "CANCELLED"
+// AnalysisStatus: "PENDING", "COMPLETED", "FAILED"
