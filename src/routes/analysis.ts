@@ -6,18 +6,18 @@ import {
   getClassAnalyses,
   deleteAnalysis,
   debugAnalysisStatus,
-  getAllAnalyses
+  getUserAnalyses
 } from '../controllers/analysisController';
 import { authenticate, authorizeResource } from '../middleware/auth';
 import { validate, analyzeRecordingSchema } from '../utils/validation';
 
 const router = Router();
 
-// Debug endpoints (sin autenticación)
-router.get('/debug-all', getAllAnalyses);
-
-// All other routes require authentication
+// All routes require authentication
 router.use(authenticate);
+
+// Get user's analyses (secure)
+router.get('/user', getUserAnalyses);
 
 // Analyze transcript
 router.post('/transcript', validate(analyzeRecordingSchema), analyzeTranscript);
