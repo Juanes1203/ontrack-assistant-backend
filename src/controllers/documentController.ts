@@ -46,13 +46,13 @@ export const getDocuments = async (req: Request, res: Response) => {
       chunks: doc.chunks ? JSON.parse(doc.chunks) : []
     }));
 
-    res.json({
+    return res.json({
       success: true,
       data: documentsWithParsedChunks
     });
   } catch (error: any) {
     console.error('Error getting documents:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener documentos',
       error: error.message
@@ -143,14 +143,14 @@ export const uploadDocumentHandler = async (req: Request, res: Response) => {
       }
     }, 3000);
 
-    res.json({
+    return res.json({
       success: true,
       data: document,
       message: 'Documento subido exitosamente'
     });
   } catch (error: any) {
     console.error('Error uploading document:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al subir documento',
       error: error.message
@@ -184,13 +184,13 @@ export const getDocument = async (req: Request, res: Response) => {
       chunks: document.chunks ? JSON.parse(document.chunks) : []
     };
 
-    res.json({
+    return res.json({
       success: true,
       data: documentWithParsedChunks
     });
   } catch (error: any) {
     console.error('Error getting document:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener documento',
       error: error.message
@@ -233,13 +233,13 @@ export const deleteDocument = async (req: Request, res: Response) => {
       where: { id }
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Documento eliminado exitosamente'
     });
   } catch (error: any) {
     console.error('Error deleting document:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al eliminar documento',
       error: error.message
@@ -277,7 +277,7 @@ export const downloadDocument = async (req: Request, res: Response) => {
     // Generar URL firmada para descarga
     const downloadUrl = await s3Service.getSignedUrl(document.s3Key, 3600); // 1 hora
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         downloadUrl,
@@ -288,7 +288,7 @@ export const downloadDocument = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error downloading document:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al descargar documento',
       error: error.message
@@ -319,13 +319,13 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
       tags: doc.tags ? JSON.parse(doc.tags) : []
     }));
 
-    res.json({
+    return res.json({
       success: true,
       data: documentsWithParsedChunks
     });
   } catch (error: any) {
     console.error('Error getting documents by category:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener documentos por categoría',
       error: error.message
@@ -369,13 +369,13 @@ export const searchDocumentsByTags = async (req: Request, res: Response) => {
       tags: doc.tags ? JSON.parse(doc.tags) : []
     }));
 
-    res.json({
+    return res.json({
       success: true,
       data: documentsWithParsedData
     });
   } catch (error: any) {
     console.error('Error searching documents by tags:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al buscar documentos por tags',
       error: error.message
@@ -414,7 +414,7 @@ export const updateDocumentMetadata = async (req: Request, res: Response) => {
       }
     });
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         ...updatedDocument,
@@ -424,7 +424,7 @@ export const updateDocumentMetadata = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error updating document metadata:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al actualizar metadatos del documento',
       error: error.message
@@ -458,7 +458,7 @@ export const getDocumentStats = async (req: Request, res: Response) => {
       _sum: { fileSize: true }
     });
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         totalDocuments,
@@ -475,7 +475,7 @@ export const getDocumentStats = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error getting document stats:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener estadísticas de documentos',
       error: error.message
@@ -536,13 +536,13 @@ export const getAllSchoolDocuments = async (req: Request, res: Response) => {
       tags: doc.tags ? JSON.parse(doc.tags) : []
     }));
 
-    res.json({
+    return res.json({
       success: true,
       data: documentsWithParsedData
     });
   } catch (error: any) {
     console.error('Error getting all school documents:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener todos los documentos de la escuela',
       error: error.message
@@ -620,7 +620,7 @@ export const getSchoolDocumentStats = async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         totalDocuments,
@@ -639,7 +639,7 @@ export const getSchoolDocumentStats = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error getting school document stats:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error al obtener estadísticas de la escuela',
       error: error.message
