@@ -14,7 +14,7 @@ import analysisRoutes from './routes/analysis';
 import recordingRoutes from './routes/recordings';
 import dashboardRoutes from './routes/dashboard';
 import documentRoutes from './routes/documents';
-import adminRoutes from './routes/admin';
+// import adminRoutes from './routes/admin'; // Temporalmente comentado
 
 // Load environment variables
 dotenv.config();
@@ -81,7 +81,7 @@ app.use('/api/analysis', analysisRoutes);
 app.use('/api/recordings', recordingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/documents', documentRoutes);
-app.use('/api/admin', adminRoutes);
+// app.use('/api/admin', adminRoutes); // Temporalmente comentado
 
 // 404 handler
 app.use(notFound);
