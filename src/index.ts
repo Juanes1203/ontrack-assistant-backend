@@ -13,6 +13,7 @@ import studentRoutes from './routes/students';
 import analysisRoutes from './routes/analysis';
 import recordingRoutes from './routes/recordings';
 import dashboardRoutes from './routes/dashboard';
+import documentRoutes from './routes/documents';
 
 // Load environment variables
 dotenv.config();
@@ -78,6 +79,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/recordings', recordingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/documents', documentRoutes);
 
 // 404 handler
 app.use(notFound);

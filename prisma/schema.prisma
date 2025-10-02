@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model School {
@@ -21,6 +21,7 @@ model School {
   users     User[]
   classes   Class[]
   students  Student[]
+  documents Document[]
 
   @@map("schools")
 }
@@ -40,6 +41,7 @@ model User {
   school    School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classes   Class[]
   recordings Recording[]
+  documents Document[]
 
   @@map("users")
 }
@@ -134,6 +136,33 @@ model AIAnalysis {
   recording Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
 
   @@map("ai_analyses")
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  filename    String
+  originalName String  // Nombre original del archivo
+  fileType    String
+  fileSize    Int
+  s3Key       String   // Clave del archivo en S3
+  s3Url       String?  // URL temporal firmada de S3
+  content     String?  // Contenido extraído del documento
+  chunks      String?  // JSON array de chunks procesados
+  category    String?  // Categoría del documento (ej: "lecturas", "ejercicios", "recursos")
+  tags        String?  // JSON array de tags
+  status      String   @default("PROCESSING") // PROCESSING, READY, ERROR
+  teacherId   String
+  schoolId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  teacher User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  school  School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
 }
 
 // Note: SQLite doesn't support enums, using strings instead

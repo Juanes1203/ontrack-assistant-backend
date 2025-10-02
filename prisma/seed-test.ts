@@ -7,8 +7,11 @@ async function main() {
   console.log('🌱 Seeding test data...');
 
   // Create a school
-  const school = await prisma.school.create({
-    data: {
+  const school = await prisma.school.upsert({
+    where: { id: 'test-school' },
+    update: {},
+    create: {
+      id: 'test-school',
       name: 'Escuela de Prueba OnTrack',
       address: 'Calle Principal 123, Ciudad'
     }
