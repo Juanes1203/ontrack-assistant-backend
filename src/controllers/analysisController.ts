@@ -313,6 +313,73 @@ export const analyzeTranscript = async (
   }
 };
 
+export const getUserAnalyses = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where = {
+      recording: {
+        teacherId: req.user!.id
+      }
+    };
+
+    const [analyses, total] = await Promise.all([
+      prisma.aIAnalysis.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          recording: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              createdAt: true,
+              transcript: true,
+              classId: true,
+              class: {
+                select: {
+                  id: true,
+                  name: true,
+                  subject: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.aIAnalysis.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        analyses: analyses.map(a => ({
+          id: a.id,
+          status: a.status,
+          createdAt: a.createdAt,
+          analysisData: a.analysisData ? JSON.parse(a.analysisData) : null,
+          recording: a.recording
+        })),
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          pages: Math.ceil(total / Number(limit))
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAnalysis = async (
   req: AuthenticatedRequest,
   res: Response,
