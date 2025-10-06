@@ -26,29 +26,46 @@ export interface RAGContext {
 
 class RAGService {
   private embeddingPipeline: any = null;
+  private initializationPromise: Promise<any> | null = null;
   private readonly MAX_RESULTS = 10;
   private readonly SIMILARITY_THRESHOLD = 0.7;
 
   constructor() {
-    this.initializeEmbeddings();
+    // No inicializar automáticamente - usar lazy loading
   }
 
-      /**
-       * Inicializa el pipeline de embeddings locales
-       */
-      private async initializeEmbeddings() {
-        try {
-          if (!this.embeddingPipeline) {
-            console.log('🔄 Inicializando embeddings locales en RAGService...');
-            // Usar el mismo modelo ligero para consistencia
-            this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
-            console.log('✅ Embeddings locales inicializados en RAGService');
-          }
-        } catch (error) {
-          console.error('❌ Error inicializando embeddings locales en RAGService:', error);
-          throw new Error('No se pudieron inicializar los embeddings locales');
-        }
-      }
+  /**
+   * Obtiene el pipeline de embeddings (lazy loading)
+   */
+  private async getEmbeddingPipeline() {
+    if (this.embeddingPipeline) {
+      return this.embeddingPipeline;
+    }
+
+    if (this.initializationPromise) {
+      return await this.initializationPromise;
+    }
+
+    this.initializationPromise = this.initializeEmbeddings();
+    return await this.initializationPromise;
+  }
+
+  /**
+   * Inicializa el pipeline de embeddings locales
+   */
+  private async initializeEmbeddings() {
+    try {
+      console.log('🔄 Inicializando embeddings locales en RAGService (lazy loading)...');
+      // Usar el mismo modelo ligero para consistencia
+      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+      console.log('✅ Embeddings locales inicializados en RAGService');
+      return this.embeddingPipeline;
+    } catch (error) {
+      console.error('❌ Error inicializando embeddings locales en RAGService:', error);
+      this.initializationPromise = null; // Reset para permitir reintentos
+      throw new Error('No se pudieron inicializar los embeddings locales');
+    }
+  }
 
   /**
    * Calcula la similitud coseno entre dos vectores
@@ -83,13 +100,11 @@ class RAGService {
    */
   async generateQueryEmbedding(query: string): Promise<number[]> {
     try {
-      // Esperar a que el pipeline esté inicializado
-      if (!this.embeddingPipeline) {
-        await this.initializeEmbeddings();
-      }
+      // Usar lazy loading para obtener el pipeline
+      const pipeline = await this.getEmbeddingPipeline();
 
       // Generar embedding usando el modelo local
-      const result = await this.embeddingPipeline(query, {
+      const result = await pipeline(query, {
         pooling: 'mean',
         normalize: true,
       });

@@ -24,27 +24,46 @@ export interface VectorizedChunk extends DocumentChunk {
 
 class VectorizationService {
   private embeddingPipeline: any = null;
+  private initializationPromise: Promise<any> | null = null;
   private readonly CHUNK_SIZE = 1000; // Caracteres por chunk
   private readonly CHUNK_OVERLAP = 200; // Solapamiento entre chunks
 
   constructor() {
-    this.initializeEmbeddings();
+    // No inicializar automáticamente - usar lazy loading
   }
 
-      /**
-       * Inicializa el pipeline de embeddings locales
-       */
-      private async initializeEmbeddings() {
-        try {
-          console.log('🔄 Inicializando embeddings locales...');
-          // Usar un modelo más ligero para evitar problemas de memoria
-          this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
-          console.log('✅ Embeddings locales inicializados correctamente');
-        } catch (error) {
-          console.error('❌ Error inicializando embeddings locales:', error);
-          throw new Error('No se pudieron inicializar los embeddings locales');
-        }
-      }
+  /**
+   * Obtiene el pipeline de embeddings (lazy loading)
+   */
+  private async getEmbeddingPipeline() {
+    if (this.embeddingPipeline) {
+      return this.embeddingPipeline;
+    }
+
+    if (this.initializationPromise) {
+      return await this.initializationPromise;
+    }
+
+    this.initializationPromise = this.initializeEmbeddings();
+    return await this.initializationPromise;
+  }
+
+  /**
+   * Inicializa el pipeline de embeddings locales
+   */
+  private async initializeEmbeddings() {
+    try {
+      console.log('🔄 Inicializando embeddings locales (lazy loading)...');
+      // Usar un modelo más ligero para evitar problemas de memoria
+      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+      console.log('✅ Embeddings locales inicializados correctamente');
+      return this.embeddingPipeline;
+    } catch (error) {
+      console.error('❌ Error inicializando embeddings locales:', error);
+      this.initializationPromise = null; // Reset para permitir reintentos
+      throw new Error('No se pudieron inicializar los embeddings locales');
+    }
+  }
 
   /**
    * Extrae texto de diferentes tipos de documentos
@@ -124,13 +143,11 @@ class VectorizationService {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Esperar a que el pipeline esté inicializado
-      if (!this.embeddingPipeline) {
-        await this.initializeEmbeddings();
-      }
+      // Usar lazy loading para obtener el pipeline
+      const pipeline = await this.getEmbeddingPipeline();
 
       // Generar embedding usando el modelo local
-      const result = await this.embeddingPipeline(text, {
+      const result = await pipeline(text, {
         pooling: 'mean',
         normalize: true,
       });
