@@ -54,15 +54,19 @@ class VectorizationService {
       
       switch (fileType.toLowerCase()) {
         case 'application/pdf':
+        case 'pdf':
           const pdfData = await pdf(buffer);
           return pdfData.text;
         
         case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         case 'application/msword':
+        case 'docx':
+        case 'doc':
           const docxResult = await mammoth.extractRawText({ buffer });
           return docxResult.value;
         
         case 'text/plain':
+        case 'txt':
           return buffer.toString('utf-8');
         
         default:
