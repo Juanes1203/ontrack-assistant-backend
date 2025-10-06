@@ -140,24 +140,39 @@ class VectorizationService {
 
   /**
    * Genera embeddings para un chunk de texto usando modelo local
+   * TEMPORAL: Desactivado por limitaciones de memoria del servidor
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Usar lazy loading para obtener el pipeline
-      const pipeline = await this.getEmbeddingPipeline();
-
-      // Generar embedding usando el modelo local
-      const result = await pipeline(text, {
-        pooling: 'mean',
-        normalize: true,
-      });
-
-      // Convertir a array de números
-      return Array.from(result.data);
+      console.log('⚠️ Embeddings desactivados temporalmente por limitaciones de memoria');
+      
+      // Generar un vector simple basado en el hash del texto
+      const hash = this.simpleHash(text);
+      const vector = new Array(384).fill(0);
+      
+      // Distribuir el hash en el vector de manera simple
+      for (let i = 0; i < Math.min(hash.length, vector.length); i++) {
+        vector[i] = (hash.charCodeAt(i % hash.length) - 128) / 128;
+      }
+      
+      return vector;
     } catch (error) {
-      console.error('Error generando embedding local:', error);
-      throw new Error('Error al generar embedding local');
+      console.error('Error generando embedding simple:', error);
+      throw new Error('Error al generar embedding simple');
     }
+  }
+
+  /**
+   * Función simple de hash para generar vectores básicos
+   */
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36);
   }
 
   /**
