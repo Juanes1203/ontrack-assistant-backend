@@ -178,6 +178,37 @@ class S3Service {
       return false;
     }
   }
+
+  /**
+   * Obtiene el buffer de un documento desde S3
+   */
+  async getDocumentBuffer(key: string): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      const response = await this.s3Client.send(command);
+      
+      if (!response.Body) {
+        throw new Error('Documento no encontrado en S3');
+      }
+
+      // Convert stream to buffer
+      const chunks: Uint8Array[] = [];
+      const stream = response.Body as any;
+      
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+
+      return Buffer.concat(chunks);
+    } catch (error) {
+      console.error('Error obteniendo documento desde S3:', error);
+      throw new Error('Error al obtener documento desde S3');
+    }
+  }
 }
 
 export default new S3Service();

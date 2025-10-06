@@ -1,407 +1,264 @@
-import { Request, Response } from 'express';
-import { prisma } from '../utils/prisma';
+import { Request, Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { AppError } from '../utils/errorHandler';
+import { AuthenticatedRequest } from '../types';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import s3Service from '../services/s3Service';
+import vectorizationService from '../services/vectorizationService';
+import ragService from '../services/ragService';
 
-// Configuración de multer para subir archivos en memoria (para S3)
+const prisma = new PrismaClient();
+
+// Configure multer for document uploads
 const storage = multer.memoryStorage();
-
 const upload = multer({ 
   storage,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') // 10MB por defecto
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.md', '.ppt', '.pptx', '.xls', '.xlsx'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
+  fileFilter: (req: any, file: any, cb: any) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de archivo no permitido. Tipos permitidos: PDF, DOC, DOCX, TXT, MD, PPT, PPTX, XLS, XLSX'));
+      cb(new AppError('Tipo de archivo no soportado. Solo se permiten PDF, DOC, DOCX y TXT.', 400));
     }
   }
 });
 
-// Middleware para subir archivos
-export const uploadDocument = upload.single('file');
+export const uploadMiddleware = upload.single('document');
 
-// Obtener todos los documentos del usuario
-export const getDocuments = async (req: Request, res: Response) => {
+// Upload and process document
+export const uploadDocument = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const userId = (req as any).user.id;
-    
-    const documents = await prisma.document.findMany({
-      where: {
-        teacherId: userId
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // Parsear chunks si existen
-    const documentsWithParsedChunks = documents.map(doc => ({
-      ...doc,
-      chunks: doc.chunks ? JSON.parse(doc.chunks) : []
-    }));
-
-    return res.json({
-      success: true,
-      data: documentsWithParsedChunks
-    });
-  } catch (error: any) {
-    console.error('Error getting documents:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener documentos',
-      error: error.message
-    });
-  }
-};
-
-// Subir un nuevo documento
-export const uploadDocumentHandler = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const { title, description, category, tags } = req.body;
-    
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No se proporcionó ningún archivo'
-      });
+      throw new AppError('No se proporcionó ningún archivo', 400);
     }
 
-    if (!title) {
-      return res.status(400).json({
-        success: false,
-        message: 'El título es requerido'
-      });
-    }
+    const { title, description, category, tags } = req.body;
+    const teacherId = req.user!.id;
+    const schoolId = req.user!.schoolId;
 
-    // Obtener el schoolId del usuario
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { schoolId: true }
-    });
+    console.log(`📄 Procesando documento: ${req.file.originalname}`);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
+    // Upload to S3
+    const uploadResult = await s3Service.uploadDocument(
+      req.file,
+      teacherId,
+      category
+    );
 
-    // Subir archivo a S3 (organizado por profesor)
-    const uploadResult = await s3Service.uploadDocument(req.file, userId, category);
-
-    // Crear el documento en la base de datos
+    // Create document record in database
     const document = await prisma.document.create({
       data: {
-        title,
-        description: description || '',
+        title: title || req.file.originalname,
+        description: description || null,
         filename: uploadResult.key.split('/').pop() || req.file.originalname,
         originalName: req.file.originalname,
-        fileType: path.extname(req.file.originalname).toLowerCase().substring(1).toUpperCase(),
+        fileType: req.file.mimetype,
         fileSize: req.file.size,
         s3Key: uploadResult.key,
         s3Url: uploadResult.url,
         category: category || 'general',
         tags: tags ? JSON.stringify(tags.split(',').map((tag: string) => tag.trim())) : null,
         status: 'PROCESSING',
-        teacherId: userId,
-        schoolId: user.schoolId
+        teacherId,
+        schoolId
       }
     });
 
-    // Simular procesamiento del documento
-    setTimeout(async () => {
-      try {
-        // Aquí iría la lógica real de procesamiento del documento
-        // Por ahora simulamos el procesamiento
-        const mockChunks = [
-          'Fragmento 1 del documento',
-          'Fragmento 2 del documento',
-          'Fragmento 3 del documento'
-        ];
+    console.log(`✅ Documento creado en BD: ${document.id}`);
 
+    // Process document asynchronously (vectorization)
+    // Save file temporarily for processing
+    const tempFilePath = path.join(__dirname, '../../temp', `${document.id}_${req.file.originalname}`);
+    fs.writeFileSync(tempFilePath, req.file.buffer);
+    
+    vectorizationService.processDocument(
+      document.id,
+      tempFilePath,
+      req.file.mimetype
+    ).catch(async (error) => {
+      console.error('Error procesando documento:', error);
         await prisma.document.update({
           where: { id: document.id },
           data: {
-            status: 'READY',
-            content: 'Contenido procesado del documento...',
-            chunks: JSON.stringify(mockChunks)
+          status: 'ERROR',
+          content: `Error en procesamiento: ${error.message}`
           }
         });
-      } catch (error) {
-        console.error('Error processing document:', error);
-        await prisma.document.update({
-          where: { id: document.id },
-          data: { status: 'ERROR' }
         });
-      }
-    }, 3000);
 
-    return res.json({
+    res.json({
       success: true,
-      data: document,
-      message: 'Documento subido exitosamente'
+      data: {
+        documentId: document.id,
+        title: document.title,
+        status: document.status,
+        message: 'Documento subido exitosamente. Se está procesando para vectorización...'
+      }
     });
-  } catch (error: any) {
-    console.error('Error uploading document:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al subir documento',
-      error: error.message
-    });
+
+  } catch (error) {
+    next(error);
   }
 };
 
-// Obtener un documento específico
-export const getDocument = async (req: Request, res: Response) => {
+// Get user's documents
+export const getUserDocuments = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const { id } = req.params;
-    const userId = (req as any).user.id;
+    const { page = 1, limit = 10, category, status } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
 
-    const document = await prisma.document.findFirst({
-      where: {
-        id,
-        teacherId: userId
-      }
-    });
-
-    if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
-    }
-
-    // Parsear chunks si existen
-    const documentWithParsedChunks = {
-      ...document,
-      chunks: document.chunks ? JSON.parse(document.chunks) : []
+    const where: any = {
+      teacherId: req.user!.id
     };
 
-    return res.json({
+    if (category) {
+      where.category = category;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    const [documents, total] = await Promise.all([
+      prisma.document.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          vectors: {
+            select: {
+              id: true,
+              chunkIndex: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.document.count({ where })
+    ]);
+
+    res.json({
       success: true,
-      data: documentWithParsedChunks
+      data: {
+        documents: documents.map(doc => ({
+          id: doc.id,
+          title: doc.title,
+          description: doc.description,
+          filename: doc.filename,
+          originalName: doc.originalName,
+          fileType: doc.fileType,
+          fileSize: doc.fileSize,
+          s3Url: doc.s3Url,
+          category: doc.category,
+          tags: doc.tags ? JSON.parse(doc.tags) : [],
+          status: doc.status,
+          vectorCount: doc.vectors.length,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt
+        })),
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          pages: Math.ceil(total / Number(limit))
+        }
+      }
     });
-  } catch (error: any) {
-    console.error('Error getting document:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener documento',
-      error: error.message
-    });
+
+  } catch (error) {
+    next(error);
   }
 };
 
-// Eliminar un documento
-export const deleteDocument = async (req: Request, res: Response) => {
+// Get document by ID
+export const getDocument = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user.id;
 
-    const document = await prisma.document.findFirst({
-      where: {
-        id,
-        teacherId: userId
+    const document = await prisma.document.findUnique({
+      where: { id },
+      include: {
+        vectors: {
+          select: {
+            id: true,
+            chunkIndex: true,
+            chunkText: true,
+            metadata: true
+          },
+          orderBy: { chunkIndex: 'asc' }
+        }
       }
     });
 
     if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+      throw new AppError('Documento no encontrado', 404);
     }
 
-    // Eliminar archivo de S3 si existe
-    if (document.s3Key) {
-      try {
-        await s3Service.deleteDocument(document.s3Key);
-      } catch (error) {
-        console.error('Error deleting file from S3:', error);
-        // Continuar con la eliminación de la base de datos aunque falle S3
+    // Check access permissions
+    if (document.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Acceso denegado', 403);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...document,
+        tags: document.tags ? JSON.parse(document.tags) : [],
+        vectors: document.vectors.map(v => ({
+          ...v,
+          metadata: v.metadata ? JSON.parse(v.metadata) : null
+        }))
       }
-    }
+    });
 
-    // Eliminar de la base de datos
-    await prisma.document.delete({
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update document
+export const updateDocument = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const { title, description, category, tags } = req.body;
+
+    const document = await prisma.document.findUnique({
       where: { id }
     });
 
-    return res.json({
-      success: true,
-      message: 'Documento eliminado exitosamente'
-    });
-  } catch (error: any) {
-    console.error('Error deleting document:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al eliminar documento',
-      error: error.message
-    });
-  }
-};
-
-// Descargar un documento
-export const downloadDocument = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const userId = (req as any).user.id;
-
-    const document = await prisma.document.findFirst({
-      where: {
-        id,
-        teacherId: userId
-      }
-    });
-
     if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+      throw new AppError('Documento no encontrado', 404);
     }
 
-    if (!document.s3Key) {
-      return res.status(404).json({
-        success: false,
-        message: 'Archivo no encontrado en S3'
-      });
-    }
-
-    // Generar URL firmada para descarga
-    const downloadUrl = await s3Service.getSignedUrl(document.s3Key, 3600); // 1 hora
-
-    return res.json({
-      success: true,
-      data: {
-        downloadUrl,
-        filename: document.originalName || document.filename,
-        expiresIn: 3600
-      },
-      message: 'URL de descarga generada exitosamente'
-    });
-  } catch (error: any) {
-    console.error('Error downloading document:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al descargar documento',
-      error: error.message
-    });
-  }
-};
-
-// Buscar documentos por categoría
-export const getDocumentsByCategory = async (req: Request, res: Response) => {
-  try {
-    const { category } = req.params;
-    const userId = (req as any).user.id;
-    
-    const documents = await prisma.document.findMany({
-      where: {
-        teacherId: userId,
-        category: category
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // Parsear chunks si existen
-    const documentsWithParsedChunks = documents.map(doc => ({
-      ...doc,
-      chunks: doc.chunks ? JSON.parse(doc.chunks) : [],
-      tags: doc.tags ? JSON.parse(doc.tags) : []
-    }));
-
-    return res.json({
-      success: true,
-      data: documentsWithParsedChunks
-    });
-  } catch (error: any) {
-    console.error('Error getting documents by category:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener documentos por categoría',
-      error: error.message
-    });
-  }
-};
-
-// Buscar documentos por tags
-export const searchDocumentsByTags = async (req: Request, res: Response) => {
-  try {
-    const { tags } = req.query;
-    const userId = (req as any).user.id;
-    
-    if (!tags) {
-      return res.status(400).json({
-        success: false,
-        message: 'Se requiere el parámetro tags'
-      });
-    }
-
-    const tagArray = Array.isArray(tags) ? tags : [tags];
-    
-    const documents = await prisma.document.findMany({
-      where: {
-        teacherId: userId,
-        OR: tagArray.map(tag => ({
-          tags: {
-            contains: tag as string
-          }
-        }))
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // Parsear chunks y tags si existen
-    const documentsWithParsedData = documents.map(doc => ({
-      ...doc,
-      chunks: doc.chunks ? JSON.parse(doc.chunks) : [],
-      tags: doc.tags ? JSON.parse(doc.tags) : []
-    }));
-
-    return res.json({
-      success: true,
-      data: documentsWithParsedData
-    });
-  } catch (error: any) {
-    console.error('Error searching documents by tags:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al buscar documentos por tags',
-      error: error.message
-    });
-  }
-};
-
-// Actualizar metadatos de un documento
-export const updateDocumentMetadata = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const userId = (req as any).user.id;
-    const { title, description, category, tags } = req.body;
-
-    const document = await prisma.document.findFirst({
-      where: {
-        id,
-        teacherId: userId
-      }
-    });
-
-    if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
+    // Check access permissions
+    if (document.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Acceso denegado', 403);
     }
 
     const updatedDocument = await prisma.document.update({
@@ -410,239 +267,245 @@ export const updateDocumentMetadata = async (req: Request, res: Response) => {
         title: title || document.title,
         description: description !== undefined ? description : document.description,
         category: category || document.category,
-        tags: tags ? JSON.stringify(tags.split(',').map((tag: string) => tag.trim())) : document.tags
+        tags: tags ? JSON.stringify(tags) : document.tags
       }
     });
 
-    return res.json({
+    res.json({
       success: true,
-      data: {
-        ...updatedDocument,
-        tags: updatedDocument.tags ? JSON.parse(updatedDocument.tags) : []
-      },
-      message: 'Metadatos del documento actualizados exitosamente'
+      data: updatedDocument,
+      message: 'Documento actualizado exitosamente'
     });
-  } catch (error: any) {
-    console.error('Error updating document metadata:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al actualizar metadatos del documento',
-      error: error.message
-    });
+
+  } catch (error) {
+    next(error);
   }
 };
 
-// Obtener estadísticas de documentos
-export const getDocumentStats = async (req: Request, res: Response) => {
+// Delete document
+export const deleteDocument = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const userId = (req as any).user.id;
-    
-    const totalDocuments = await prisma.document.count({
-      where: { teacherId: userId }
+    const { id } = req.params;
+
+    const document = await prisma.document.findUnique({
+      where: { id }
     });
 
-    const documentsByStatus = await prisma.document.groupBy({
-      by: ['status'],
-      where: { teacherId: userId },
-      _count: { status: true }
+    if (!document) {
+      throw new AppError('Documento no encontrado', 404);
+    }
+
+    // Check access permissions
+    if (document.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Acceso denegado', 403);
+    }
+
+    // Delete from S3
+    await s3Service.deleteDocument(document.s3Key);
+
+    // Delete vectors and document from database
+    await prisma.documentVector.deleteMany({
+      where: { documentId: id }
     });
 
-    const documentsByCategory = await prisma.document.groupBy({
-      by: ['category'],
-      where: { teacherId: userId },
-      _count: { category: true }
+    await prisma.document.delete({
+      where: { id }
     });
 
-    const totalSize = await prisma.document.aggregate({
-      where: { teacherId: userId },
-      _sum: { fileSize: true }
-    });
-
-    return res.json({
+    res.json({
       success: true,
-      data: {
-        totalDocuments,
-        documentsByStatus: documentsByStatus.map(item => ({
-          status: item.status,
-          count: item._count.status
-        })),
-        documentsByCategory: documentsByCategory.map(item => ({
-          category: item.category,
-          count: item._count.category
-        })),
-        totalSize: totalSize._sum.fileSize || 0
-      }
+      message: 'Documento eliminado exitosamente'
     });
-  } catch (error: any) {
-    console.error('Error getting document stats:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener estadísticas de documentos',
-      error: error.message
-    });
+
+  } catch (error) {
+    next(error);
   }
 };
 
-// Obtener todos los documentos de la escuela (solo para administradores)
-export const getAllSchoolDocuments = async (req: Request, res: Response) => {
+// Re-process document (re-vectorize)
+export const reprocessDocument = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const userId = (req as any).user.id;
-    const userRole = (req as any).user.role;
+    const { id } = req.params;
+
+    const document = await prisma.document.findUnique({
+      where: { id }
+    });
+
+    if (!document) {
+      throw new AppError('Documento no encontrado', 404);
+    }
+
+    // Check access permissions
+    if (document.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Acceso denegado', 403);
+    }
+
+    // Get file from S3
+    const fileBuffer = await s3Service.getDocumentBuffer(document.s3Key);
     
-    // Solo administradores pueden ver todos los documentos
-    if (userRole !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        message: 'Solo los administradores pueden ver todos los documentos'
-      });
-    }
-
-    // Obtener el schoolId del usuario
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { schoolId: true }
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
-    const documents = await prisma.document.findMany({
-      where: {
-        schoolId: user.schoolId
-      },
-      include: {
-        teacher: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // Parsear chunks y tags si existen
-    const documentsWithParsedData = documents.map(doc => ({
-      ...doc,
-      chunks: doc.chunks ? JSON.parse(doc.chunks) : [],
-      tags: doc.tags ? JSON.parse(doc.tags) : []
-    }));
-
-    return res.json({
-      success: true,
-      data: documentsWithParsedData
-    });
-  } catch (error: any) {
-    console.error('Error getting all school documents:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener todos los documentos de la escuela',
-      error: error.message
-    });
-  }
-};
-
-// Obtener estadísticas de toda la escuela (solo para administradores)
-export const getSchoolDocumentStats = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.id;
-    const userRole = (req as any).user.role;
+    // Save file temporarily for processing
+    const tempFilePath = path.join(__dirname, '../../temp', `${document.id}_${document.originalName}`);
+    fs.writeFileSync(tempFilePath, fileBuffer);
     
-    // Solo administradores pueden ver estadísticas de toda la escuela
-    if (userRole !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        message: 'Solo los administradores pueden ver estadísticas de toda la escuela'
-      });
-    }
-
-    // Obtener el schoolId del usuario
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { schoolId: true }
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
-    const totalDocuments = await prisma.document.count({
-      where: { schoolId: user.schoolId }
-    });
-
-    const documentsByTeacher = await prisma.document.groupBy({
-      by: ['teacherId'],
-      where: { schoolId: user.schoolId },
-      _count: { teacherId: true }
-    });
-
-    const documentsByCategory = await prisma.document.groupBy({
-      by: ['category'],
-      where: { schoolId: user.schoolId },
-      _count: { category: true }
-    });
-
-    const documentsByStatus = await prisma.document.groupBy({
-      by: ['status'],
-      where: { schoolId: user.schoolId },
-      _count: { status: true }
-    });
-
-    const totalSize = await prisma.document.aggregate({
-      where: { schoolId: user.schoolId },
-      _sum: { fileSize: true }
-    });
-
-    // Obtener información de los profesores
-    const teachersWithCounts = await Promise.all(
-      documentsByTeacher.map(async (item) => {
-        const teacher = await prisma.user.findUnique({
-          where: { id: item.teacherId },
-          select: { firstName: true, lastName: true, email: true }
-        });
-        return {
-          teacherId: item.teacherId,
-          teacherName: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Desconocido',
-          teacherEmail: teacher?.email || '',
-          documentCount: item._count.teacherId
-        };
-      })
+    // Re-process document
+    await vectorizationService.processDocument(
+      document.id,
+      tempFilePath,
+      document.fileType
     );
 
-    return res.json({
+    res.json({
+      success: true,
+      message: 'Documento enviado para re-procesamiento'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Search documents using RAG
+export const searchDocuments = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { query, category, limit = 10 } = req.query;
+
+    if (!query) {
+      throw new AppError('Query de búsqueda requerida', 400);
+    }
+
+    const searchResults = await ragService.searchRelevantChunks(
+      query as string,
+      req.user!.id,
+      req.user!.schoolId,
+      category as string,
+      Number(limit)
+    );
+
+    res.json({
       success: true,
       data: {
-        totalDocuments,
-        totalTeachers: documentsByTeacher.length,
-        documentsByTeacher: teachersWithCounts,
-        documentsByCategory: documentsByCategory.map(item => ({
-          category: item.category,
-          count: item._count.category
+        query,
+        results: searchResults.map(result => ({
+          document: result.document,
+          chunk: {
+            text: result.chunk.text,
+            index: result.chunk.index,
+            metadata: result.chunk.metadata
+          },
+          similarity: result.similarity,
+          relevanceScore: result.relevanceScore
         })),
-        documentsByStatus: documentsByStatus.map(item => ({
-          status: item.status,
-          count: item._count.status
-        })),
-        totalSize: totalSize._sum.fileSize || 0
+        totalResults: searchResults.length
       }
     });
-  } catch (error: any) {
-    console.error('Error getting school document stats:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al obtener estadísticas de la escuela',
-      error: error.message
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get similar documents to a recording
+export const getSimilarDocuments = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { transcript } = req.body;
+    const { limit = 5 } = req.query;
+
+    if (!transcript) {
+      throw new AppError('Transcript requerido', 400);
+    }
+
+    const similarDocuments = await ragService.findSimilarDocuments(
+      transcript,
+      req.user!.id,
+      req.user!.schoolId,
+      Number(limit)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        similarDocuments,
+        totalResults: similarDocuments.length
+      }
     });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get knowledge center statistics
+export const getKnowledgeCenterStats = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const stats = await ragService.getKnowledgeCenterStats(
+      req.user!.id,
+      req.user!.schoolId
+    );
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get document download URL
+export const getDocumentDownloadUrl = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const document = await prisma.document.findUnique({
+      where: { id }
+    });
+
+    if (!document) {
+      throw new AppError('Documento no encontrado', 404);
+    }
+
+    // Check access permissions
+    if (document.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Acceso denegado', 403);
+    }
+
+    // Generate signed URL
+    const downloadUrl = await s3Service.getSignedUrl(document.s3Key, 3600); // 1 hour
+
+    res.json({
+      success: true,
+      data: {
+        downloadUrl,
+        expiresIn: 3600
+      }
+    });
+
+  } catch (error) {
+    next(error);
   }
 };

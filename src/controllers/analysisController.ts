@@ -2,18 +2,31 @@ import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../utils/errorHandler';
 import { AuthenticatedRequest, AnalyzeTranscriptRequest } from '../types';
+import ragService from '../services/ragService';
 
 const STRAICO_API_KEY = 'dR-V0csHwxpoaZsR608sLWMMoxzqeQonX4UWGCpUbkB8ljEBaZW';
 const STRAICO_API_URL = 'https://api.straico.com/v1/prompt/completion';
 
-// Straico API integration function
-async function analyzeWithStraico(analysisId: string, transcript: string) {
+// Straico API integration function with RAG
+async function analyzeWithStraico(analysisId: string, transcript: string, teacherId?: string, schoolId?: string) {
   const prisma = new PrismaClient();
   
   try {
-    console.log('🚀 Starting Straico analysis for analysisId:', analysisId);
+    console.log('🚀 Starting Straico analysis with RAG for analysisId:', analysisId);
     console.log('📊 Transcript length:', transcript.length, 'characters');
     console.log('📝 Transcript preview:', transcript.substring(0, 100) + '...');
+    
+    // Generar contexto RAG del centro de conocimiento
+    let ragContext = '';
+    try {
+      console.log('🧠 Generando contexto RAG del centro de conocimiento...');
+      const context = await ragService.generateRAGContext(transcript, teacherId, schoolId);
+      ragContext = context.contextText;
+      console.log(`📚 Contexto RAG generado: ${context.relevantChunks.length} chunks de ${context.totalDocuments} documentos`);
+    } catch (error) {
+      console.warn('⚠️ Error generando contexto RAG, continuando sin contexto:', error);
+      ragContext = 'No se pudo acceder al centro de conocimiento en este momento.';
+    }
     
     const systemPrompt = `Eres un analista educativo experto en la Evaluación de Carácter Diagnóstico Formativa (ECDF) para docentes. Analiza la siguiente transcripción de clase y proporciona un análisis detallado basado en los criterios de evaluación ECDF y los 6 elementos clave de análisis pedagógico. Enfócate en identificar aspectos clave de la práctica docente según los criterios establecidos. IMPORTANTE: Proporciona TODO el análisis en español.
 
@@ -123,6 +136,8 @@ IMPORTANTE: Responde SOLO con el JSON del análisis, sin ningún texto adicional
 
 IMPORTANTE: Responde SOLO con el JSON del análisis, sin ningún texto adicional antes o después.
 
+${ragContext}
+
 Transcripción a analizar:
 ${transcript}`;
 
@@ -217,9 +232,17 @@ export const processRecordingAnalysis = async (recordingId: string, transcript: 
     console.log('🔄 Processing analysis for recording:', recordingId);
     console.log('📝 Transcript length:', transcript.length, 'characters');
     
-    // Find the analysis for this recording
+    // Find the analysis and recording details for this recording
     const analysis = await prisma.aIAnalysis.findFirst({
       where: { recordingId },
+      include: {
+        recording: {
+          include: {
+            teacher: true,
+            class: true
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -229,10 +252,15 @@ export const processRecordingAnalysis = async (recordingId: string, transcript: 
     }
 
     console.log('✅ Found analysis record:', analysis.id, 'Status:', analysis.status);
-    console.log('🚀 Starting Straico analysis...');
+    console.log('🚀 Starting Straico analysis with RAG...');
 
-    // Start AI analysis with Straico API
-    await analyzeWithStraico(analysis.id, transcript);
+    // Start AI analysis with Straico API and RAG context
+    await analyzeWithStraico(
+      analysis.id, 
+      transcript, 
+      analysis.recording.teacherId,
+      analysis.recording.class.schoolId
+    );
     
     console.log('✅ Analysis processing completed for recording:', recordingId);
   } catch (error) {
@@ -285,8 +313,8 @@ export const analyzeTranscript = async (
       }
     });
 
-    // Start AI analysis with Straico API
-    analyzeWithStraico(analysis.id, transcript).catch(async (error: any) => {
+    // Start AI analysis with Straico API and RAG context
+    analyzeWithStraico(analysis.id, transcript, req.user!.id, classRecord.schoolId).catch(async (error: any) => {
       console.error('Error in AI analysis:', error);
       await prisma.aIAnalysis.update({
         where: { id: analysis.id },

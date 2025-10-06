@@ -159,7 +159,7 @@ model Document {
   chunks      String?  // JSON array de chunks procesados
   category    String?  // Categoría del documento (ej: "lecturas", "ejercicios", "recursos")
   tags        String?  // JSON array de tags
-  status      String   @default("PROCESSING") // PROCESSING, READY, ERROR
+  status      String   @default("PROCESSING") // PROCESSING, READY, ERROR, VECTORIZED
   teacherId   String
   schoolId    String
   createdAt   DateTime @default(now())
@@ -168,8 +168,25 @@ model Document {
   // Relations
   teacher User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   school  School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  vectors DocumentVector[]
 
   @@map("documents")
+}
+
+model DocumentVector {
+  id          String   @id @default(cuid())
+  documentId  String
+  chunkIndex  Int      // Índice del chunk en el documento
+  chunkText   String   // Texto del chunk
+  vector      String   // Vector embeddings como JSON string
+  metadata    String?  // Metadatos adicionales como JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_vectors")
 }
 
 // Note: SQLite doesn't support enums, using strings instead

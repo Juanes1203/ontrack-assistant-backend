@@ -1,5 +1,5 @@
 import { Request } from 'express';
-import { User, School, Class, Student, Recording, AIAnalysis } from '@prisma/client';
+import { User, School, Class, Student, Recording, AIAnalysis, Document, DocumentVector } from '@prisma/client';
 
 // Extended types with relations
 export interface UserWithSchool extends User {
@@ -17,6 +17,10 @@ export interface RecordingWithAnalysis extends Recording {
   class: Class;
   teacher: User;
   analyses: AIAnalysis[];
+}
+
+export interface DocumentWithVectors extends Document {
+  vectors: DocumentVector[];
 }
 
 // Request types
@@ -150,8 +154,31 @@ export interface JwtPayload {
   exp: number;
 }
 
+// Document types
+export interface CreateDocumentRequest {
+  title: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+}
+
+export interface UpdateDocumentRequest extends Partial<CreateDocumentRequest> {
+  id: string;
+}
+
+export interface SearchDocumentsRequest {
+  query: string;
+  category?: string;
+  limit?: number;
+}
+
+export interface SimilarDocumentsRequest {
+  transcript: string;
+  limit?: number;
+}
+
 // Re-export Prisma types
-export { User, School, Class, Student, Recording, AIAnalysis } from '@prisma/client';
+export { User, School, Class, Student, Recording, AIAnalysis, Document, DocumentVector } from '@prisma/client';
 
 // Define enum types as string unions for SQLite compatibility
 export type UserRole = 'TEACHER' | 'ADMIN';
@@ -159,3 +186,4 @@ export type EnrollmentStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
 export type ClassStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type RecordingStatus = 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type AnalysisStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
+export type DocumentStatus = 'PROCESSING' | 'READY' | 'ERROR' | 'VECTORIZED';
