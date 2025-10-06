@@ -54,8 +54,8 @@ class VectorizationService {
   private async initializeEmbeddings() {
     try {
       console.log('🔄 Inicializando embeddings locales (lazy loading)...');
-      // Usar un modelo más ligero para evitar problemas de memoria
-      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+      // Usar un modelo ultra-ligero para evitar problemas de memoria
+      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
       console.log('✅ Embeddings locales inicializados correctamente');
       return this.embeddingPipeline;
     } catch (error) {

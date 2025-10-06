@@ -56,8 +56,8 @@ class RAGService {
   private async initializeEmbeddings() {
     try {
       console.log('🔄 Inicializando embeddings locales en RAGService (lazy loading)...');
-      // Usar el mismo modelo ligero para consistencia
-      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+      // Usar el mismo modelo ultra-ligero para consistencia
+      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
       console.log('✅ Embeddings locales inicializados en RAGService');
       return this.embeddingPipeline;
     } catch (error) {
