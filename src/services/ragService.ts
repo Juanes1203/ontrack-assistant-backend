@@ -33,21 +33,22 @@ class RAGService {
     this.initializeEmbeddings();
   }
 
-  /**
-   * Inicializa el pipeline de embeddings locales
-   */
-  private async initializeEmbeddings() {
-    try {
-      if (!this.embeddingPipeline) {
-        console.log('🔄 Inicializando embeddings locales en RAGService...');
-        this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-        console.log('✅ Embeddings locales inicializados en RAGService');
+      /**
+       * Inicializa el pipeline de embeddings locales
+       */
+      private async initializeEmbeddings() {
+        try {
+          if (!this.embeddingPipeline) {
+            console.log('🔄 Inicializando embeddings locales en RAGService...');
+            // Usar el mismo modelo ligero para consistencia
+            this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+            console.log('✅ Embeddings locales inicializados en RAGService');
+          }
+        } catch (error) {
+          console.error('❌ Error inicializando embeddings locales en RAGService:', error);
+          throw new Error('No se pudieron inicializar los embeddings locales');
+        }
       }
-    } catch (error) {
-      console.error('❌ Error inicializando embeddings locales en RAGService:', error);
-      throw new Error('No se pudieron inicializar los embeddings locales');
-    }
-  }
 
   /**
    * Calcula la similitud coseno entre dos vectores

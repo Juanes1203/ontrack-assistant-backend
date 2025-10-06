@@ -31,19 +31,20 @@ class VectorizationService {
     this.initializeEmbeddings();
   }
 
-  /**
-   * Inicializa el pipeline de embeddings locales
-   */
-  private async initializeEmbeddings() {
-    try {
-      console.log('🔄 Inicializando embeddings locales...');
-      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-      console.log('✅ Embeddings locales inicializados correctamente');
-    } catch (error) {
-      console.error('❌ Error inicializando embeddings locales:', error);
-      throw new Error('No se pudieron inicializar los embeddings locales');
-    }
-  }
+      /**
+       * Inicializa el pipeline de embeddings locales
+       */
+      private async initializeEmbeddings() {
+        try {
+          console.log('🔄 Inicializando embeddings locales...');
+          // Usar un modelo más ligero para evitar problemas de memoria
+          this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/sentence-transformers/all-MiniLM-L6-v2');
+          console.log('✅ Embeddings locales inicializados correctamente');
+        } catch (error) {
+          console.error('❌ Error inicializando embeddings locales:', error);
+          throw new Error('No se pudieron inicializar los embeddings locales');
+        }
+      }
 
   /**
    * Extrae texto de diferentes tipos de documentos
