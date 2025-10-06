@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import OpenAI from 'openai';
+import { pipeline } from '@xenova/transformers';
 import { VectorizedChunk } from './vectorizationService';
 
 const prisma = new PrismaClient();
@@ -25,14 +25,28 @@ export interface RAGContext {
 }
 
 class RAGService {
-  private openai: OpenAI;
+  private embeddingPipeline: any = null;
   private readonly MAX_RESULTS = 10;
   private readonly SIMILARITY_THRESHOLD = 0.7;
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    this.initializeEmbeddings();
+  }
+
+  /**
+   * Inicializa el pipeline de embeddings locales
+   */
+  private async initializeEmbeddings() {
+    try {
+      if (!this.embeddingPipeline) {
+        console.log('🔄 Inicializando embeddings locales en RAGService...');
+        this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+        console.log('✅ Embeddings locales inicializados en RAGService');
+      }
+    } catch (error) {
+      console.error('❌ Error inicializando embeddings locales en RAGService:', error);
+      throw new Error('No se pudieron inicializar los embeddings locales');
+    }
   }
 
   /**
@@ -64,19 +78,26 @@ class RAGService {
   }
 
   /**
-   * Genera embedding para una consulta de búsqueda
+   * Genera embedding para una consulta de búsqueda usando modelo local
    */
   async generateQueryEmbedding(query: string): Promise<number[]> {
     try {
-      const response = await this.openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: query,
+      // Esperar a que el pipeline esté inicializado
+      if (!this.embeddingPipeline) {
+        await this.initializeEmbeddings();
+      }
+
+      // Generar embedding usando el modelo local
+      const result = await this.embeddingPipeline(query, {
+        pooling: 'mean',
+        normalize: true,
       });
 
-      return response.data[0].embedding;
+      // Convertir a array de números
+      return Array.from(result.data);
     } catch (error) {
-      console.error('Error generando embedding de consulta:', error);
-      throw new Error('Error al generar embedding de consulta');
+      console.error('Error generando embedding de consulta local:', error);
+      throw new Error('Error al generar embedding de consulta local');
     }
   }
 

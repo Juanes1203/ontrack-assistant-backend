@@ -1,9 +1,9 @@
-import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 const pdf = require('pdf-parse');
 import mammoth from 'mammoth';
 import fs from 'fs';
 import path from 'path';
+import { pipeline } from '@xenova/transformers';
 
 const prisma = new PrismaClient();
 
@@ -23,14 +23,26 @@ export interface VectorizedChunk extends DocumentChunk {
 }
 
 class VectorizationService {
-  private openai: OpenAI;
+  private embeddingPipeline: any = null;
   private readonly CHUNK_SIZE = 1000; // Caracteres por chunk
   private readonly CHUNK_OVERLAP = 200; // Solapamiento entre chunks
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    this.initializeEmbeddings();
+  }
+
+  /**
+   * Inicializa el pipeline de embeddings locales
+   */
+  private async initializeEmbeddings() {
+    try {
+      console.log('🔄 Inicializando embeddings locales...');
+      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      console.log('✅ Embeddings locales inicializados correctamente');
+    } catch (error) {
+      console.error('❌ Error inicializando embeddings locales:', error);
+      throw new Error('No se pudieron inicializar los embeddings locales');
+    }
   }
 
   /**
@@ -103,19 +115,26 @@ class VectorizationService {
   }
 
   /**
-   * Genera embeddings para un chunk de texto
+   * Genera embeddings para un chunk de texto usando modelo local
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const response = await this.openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: text,
+      // Esperar a que el pipeline esté inicializado
+      if (!this.embeddingPipeline) {
+        await this.initializeEmbeddings();
+      }
+
+      // Generar embedding usando el modelo local
+      const result = await this.embeddingPipeline(text, {
+        pooling: 'mean',
+        normalize: true,
       });
 
-      return response.data[0].embedding;
+      // Convertir a array de números
+      return Array.from(result.data);
     } catch (error) {
-      console.error('Error generando embedding:', error);
-      throw new Error('Error al generar embedding');
+      console.error('Error generando embedding local:', error);
+      throw new Error('Error al generar embedding local');
     }
   }
 

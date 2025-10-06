@@ -27,7 +27,8 @@ Grabación de clase → Transcripción → Búsqueda semántica → Contexto RAG
 
 ```env
 # OpenAI para embeddings
-OPENAI_API_KEY="tu_openai_api_key"
+# Embeddings locales - No se requiere API externa
+# Los embeddings se generan localmente usando @xenova/transformers
 
 # AWS S3 para almacenamiento
 AWS_ACCESS_KEY_ID="tu_aws_access_key"
