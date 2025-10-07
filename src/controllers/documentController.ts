@@ -389,7 +389,6 @@ export const searchDocuments = async (
       query as string,
       req.user!.id,
       req.user!.schoolId,
-      category as string,
       Number(limit)
     );
 
@@ -430,7 +429,7 @@ export const getSimilarDocuments = async (
       throw new AppError('Transcript requerido', 400);
     }
 
-    const similarDocuments = await ragService.findSimilarDocuments(
+    const similarDocuments = await ragService.searchRelevantChunks(
       transcript,
       req.user!.id,
       req.user!.schoolId,
@@ -457,10 +456,21 @@ export const getKnowledgeCenterStats = async (
   next: NextFunction
 ) => {
   try {
-    const stats = await ragService.getKnowledgeCenterStats(
-      req.user!.id,
-      req.user!.schoolId
-    );
+    // Obtener estadísticas básicas del centro de conocimiento
+    const totalDocuments = await prisma.document.count({
+      where: {
+        teacherId: req.user!.id,
+        schoolId: req.user!.schoolId,
+        status: 'READY',
+      },
+    });
+
+    const stats = {
+      totalDocuments,
+      vectorizedDocuments: 0, // Sin vectorización
+      totalChunks: totalDocuments, // Cada documento es un chunk
+      categories: [],
+    };
 
     res.json({
       success: true,

@@ -3,7 +3,6 @@ const pdf = require('pdf-parse');
 import mammoth from 'mammoth';
 import fs from 'fs';
 import path from 'path';
-import { pipeline } from '@xenova/transformers';
 
 const prisma = new PrismaClient();
 
@@ -23,46 +22,8 @@ export interface VectorizedChunk extends DocumentChunk {
 }
 
 class VectorizationService {
-  private embeddingPipeline: any = null;
-  private initializationPromise: Promise<any> | null = null;
-  private readonly CHUNK_SIZE = 1000; // Caracteres por chunk
-  private readonly CHUNK_OVERLAP = 200; // Solapamiento entre chunks
-
   constructor() {
-    // No inicializar automáticamente - usar lazy loading
-  }
-
-  /**
-   * Obtiene el pipeline de embeddings (lazy loading)
-   */
-  private async getEmbeddingPipeline() {
-    if (this.embeddingPipeline) {
-      return this.embeddingPipeline;
-    }
-
-    if (this.initializationPromise) {
-      return await this.initializationPromise;
-    }
-
-    this.initializationPromise = this.initializeEmbeddings();
-    return await this.initializationPromise;
-  }
-
-  /**
-   * Inicializa el pipeline de embeddings locales
-   */
-  private async initializeEmbeddings() {
-    try {
-      console.log('🔄 Inicializando embeddings locales (lazy loading)...');
-      // Usar un modelo ultra-ligero para evitar problemas de memoria
-      this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-      console.log('✅ Embeddings locales inicializados correctamente');
-      return this.embeddingPipeline;
-    } catch (error) {
-      console.error('❌ Error inicializando embeddings locales:', error);
-      this.initializationPromise = null; // Reset para permitir reintentos
-      throw new Error('No se pudieron inicializar los embeddings locales');
-    }
+    console.log('📄 VectorizationService inicializado (SIN vectorización - solo extracción de texto)');
   }
 
   /**
@@ -71,204 +32,44 @@ class VectorizationService {
   async extractTextFromDocument(filePath: string, fileType: string): Promise<string> {
     try {
       const buffer = fs.readFileSync(filePath);
+
+      // Normalizar el tipo de archivo
+      const normalizedType = fileType.toLowerCase();
       
-      switch (fileType.toLowerCase()) {
+      switch (normalizedType) {
         case 'application/pdf':
         case 'pdf':
           const pdfData = await pdf(buffer);
           return pdfData.text;
-        
+
         case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
         case 'application/msword':
         case 'docx':
         case 'doc':
           const docxResult = await mammoth.extractRawText({ buffer });
           return docxResult.value;
-        
+
         case 'text/plain':
         case 'txt':
-          return buffer.toString('utf-8');
-        
+          return buffer.toString('utf8');
+
         default:
-          throw new Error(`Tipo de archivo no soportado: ${fileType}`);
+          throw new Error(`Tipo de archivo no soportado para extracción de texto: ${fileType}`);
       }
-    } catch (error) {
-      console.error('Error extrayendo texto del documento:', error);
-      throw new Error('Error al extraer texto del documento');
-    }
-  }
-
-  /**
-   * Divide el texto en chunks para vectorización
-   */
-  chunkText(text: string): DocumentChunk[] {
-    const chunks: DocumentChunk[] = [];
-    let start = 0;
-    let index = 0;
-
-    while (start < text.length) {
-      const end = Math.min(start + this.CHUNK_SIZE, text.length);
-      let chunkText = text.slice(start, end);
-
-      // Intentar cortar en un punto lógico (párrafo, oración)
-      if (end < text.length) {
-        const lastParagraph = chunkText.lastIndexOf('\n\n');
-        const lastSentence = chunkText.lastIndexOf('. ');
-        
-        if (lastParagraph > this.CHUNK_SIZE * 0.5) {
-          chunkText = text.slice(start, start + lastParagraph);
-        } else if (lastSentence > this.CHUNK_SIZE * 0.5) {
-          chunkText = text.slice(start, start + lastSentence + 1);
-        }
+    } finally {
+      // Eliminar el archivo temporal después de la extracción
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
       }
-
-      chunks.push({
-        text: chunkText.trim(),
-        index,
-        metadata: {
-          startChar: start,
-          endChar: start + chunkText.length,
-        }
-      });
-
-      start += chunkText.length - this.CHUNK_OVERLAP;
-      index++;
-    }
-
-    return chunks;
-  }
-
-  /**
-   * Genera embeddings para un chunk de texto usando modelo local
-   * TEMPORAL: Desactivado por limitaciones de memoria del servidor
-   */
-  async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      console.log('⚠️ Embeddings desactivados temporalmente por limitaciones de memoria');
-      
-      // Generar un vector simple basado en el hash del texto
-      const hash = this.simpleHash(text);
-      const vector = new Array(384).fill(0);
-      
-      // Distribuir el hash en el vector de manera simple
-      for (let i = 0; i < Math.min(hash.length, vector.length); i++) {
-        vector[i] = (hash.charCodeAt(i % hash.length) - 128) / 128;
-      }
-      
-      return vector;
-    } catch (error) {
-      console.error('Error generando embedding simple:', error);
-      throw new Error('Error al generar embedding simple');
     }
   }
 
   /**
-   * Función simple de hash para generar vectores básicos
-   */
-  private simpleHash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(36);
-  }
-
-  /**
-   * Vectoriza un documento completo
-   */
-  async vectorizeDocument(documentId: string, filePath: string, fileType: string): Promise<VectorizedChunk[]> {
-    try {
-      console.log(`🔄 Iniciando vectorización del documento ${documentId}`);
-
-      // Extraer texto del documento
-      const text = await this.extractTextFromDocument(filePath, fileType);
-      console.log(`📄 Texto extraído: ${text.length} caracteres`);
-
-      // Dividir en chunks
-      const chunks = this.chunkText(text);
-      console.log(`📦 Documento dividido en ${chunks.length} chunks`);
-
-      // Generar embeddings para cada chunk
-      const vectorizedChunks: VectorizedChunk[] = [];
-      
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        console.log(`🔢 Procesando chunk ${i + 1}/${chunks.length}`);
-        
-        const vector = await this.generateEmbedding(chunk.text);
-        
-        const vectorizedChunk: VectorizedChunk = {
-          ...chunk,
-          vector,
-          id: `${documentId}_${i}`,
-        };
-        
-        vectorizedChunks.push(vectorizedChunk);
-      }
-
-      console.log(`✅ Vectorización completada: ${vectorizedChunks.length} chunks vectorizados`);
-      return vectorizedChunks;
-
-    } catch (error) {
-      console.error('Error en vectorización del documento:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Guarda los chunks vectorizados en la base de datos
-   */
-  async saveVectorizedChunks(documentId: string, vectorizedChunks: VectorizedChunk[]): Promise<void> {
-    try {
-      console.log(`💾 Guardando ${vectorizedChunks.length} chunks vectorizados en la base de datos`);
-
-      // Eliminar chunks existentes del documento
-      await prisma.documentVector.deleteMany({
-        where: { documentId }
-      });
-
-      // Guardar nuevos chunks
-      const chunksToSave = vectorizedChunks.map(chunk => ({
-        documentId,
-        chunkIndex: chunk.index,
-        chunkText: chunk.text,
-        vector: JSON.stringify(chunk.vector),
-        metadata: chunk.metadata ? JSON.stringify(chunk.metadata) : null,
-      }));
-
-      await prisma.documentVector.createMany({
-        data: chunksToSave
-      });
-
-      // Actualizar estado del documento
-      await prisma.document.update({
-        where: { id: documentId },
-        data: {
-          status: 'VECTORIZED',
-          content: vectorizedChunks.map(c => c.text).join('\n\n'),
-          chunks: JSON.stringify(vectorizedChunks.map(c => ({
-            index: c.index,
-            text: c.text.substring(0, 200) + '...', // Solo preview
-            metadata: c.metadata
-          })))
-        }
-      });
-
-      console.log(`✅ Chunks vectorizados guardados exitosamente`);
-    } catch (error) {
-      console.error('Error guardando chunks vectorizados:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Procesa y vectoriza un documento completo
+   * Procesa un documento subido: SOLO extrae texto (SIN vectorización)
    */
   async processDocument(documentId: string, filePath: string, fileType: string): Promise<void> {
     try {
-      console.log(`🚀 Iniciando procesamiento completo del documento ${documentId}`);
+      console.log(`📄 Procesando documento ${documentId} (SIN vectorización)...`);
 
       // Actualizar estado a PROCESSING
       await prisma.document.update({
@@ -276,76 +77,40 @@ class VectorizationService {
         data: { status: 'PROCESSING' }
       });
 
-      // Vectorizar documento
-      const vectorizedChunks = await this.vectorizeDocument(documentId, filePath, fileType);
+      // Solo extraer texto sin vectorizar
+      const extractedText = await this.extractTextFromDocument(filePath, fileType);
+      
+      // Marcar documento como READY directamente
+      await prisma.document.update({
+        where: { id: documentId },
+        data: {
+          status: 'READY',
+          content: extractedText,
+          chunks: JSON.stringify([extractedText]), // Un solo chunk con todo el texto
+        },
+      });
 
-      // Guardar en base de datos
-      await this.saveVectorizedChunks(documentId, vectorizedChunks);
-
-      console.log(`✅ Procesamiento del documento ${documentId} completado exitosamente`);
+      console.log(`✅ Documento ${documentId} procesado y marcado como READY (SIN vectorización)`);
 
     } catch (error) {
-      console.error('Error procesando documento:', error);
-      
-      // Actualizar estado a ERROR
+      console.error(`Error en el procesamiento del documento ${documentId}:`, error);
       await prisma.document.update({
         where: { id: documentId },
         data: { 
           status: 'ERROR',
           content: `Error en procesamiento: ${error instanceof Error ? error.message : 'Error desconocido'}`
-        }
+        },
       });
-      
-      throw error;
-    } finally {
-      await prisma.$disconnect();
-    }
-  }
-
-  /**
-   * Obtiene chunks vectorizados de un documento
-   */
-  async getDocumentVectors(documentId: string): Promise<VectorizedChunk[]> {
-    try {
-      const vectors = await prisma.documentVector.findMany({
-        where: { documentId },
-        orderBy: { chunkIndex: 'asc' }
-      });
-
-      return vectors.map(v => ({
-        id: v.id,
-        text: v.chunkText,
-        index: v.chunkIndex,
-        vector: JSON.parse(v.vector),
-        metadata: v.metadata ? JSON.parse(v.metadata) : undefined
-      }));
-    } catch (error) {
-      console.error('Error obteniendo vectores del documento:', error);
       throw error;
     }
   }
 
   /**
-   * Elimina todos los vectores de un documento
+   * Método dummy para compatibilidad - no hace nada
    */
-  async deleteDocumentVectors(documentId: string): Promise<void> {
-    try {
-      await prisma.documentVector.deleteMany({
-        where: { documentId }
-      });
-      
-      await prisma.document.update({
-        where: { id: documentId },
-        data: { 
-          status: 'READY',
-          content: null,
-          chunks: null
-        }
-      });
-    } catch (error) {
-      console.error('Error eliminando vectores del documento:', error);
-      throw error;
-    }
+  async vectorizeDocument(documentId: string, filePath: string, fileType: string): Promise<VectorizedChunk[]> {
+    console.log(`⚠️ Vectorización desactivada para documento ${documentId}`);
+    return [];
   }
 }
 
