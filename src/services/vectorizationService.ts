@@ -1,10 +1,23 @@
 import { PrismaClient } from '@prisma/client';
+import OpenAI from 'openai';
 const pdf = require('pdf-parse');
 import mammoth from 'mammoth';
 import fs from 'fs';
 import path from 'path';
 
 const prisma = new PrismaClient();
+
+// Configuración de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+const MAX_TOKENS = parseInt(process.env.OPENAI_MAX_TOKENS || '8191');
+
+// Configuración de chunking
+const CHUNK_SIZE = 1000; // caracteres por chunk
+const CHUNK_OVERLAP = 200; // overlap entre chunks
 
 export interface DocumentChunk {
   text: string;
@@ -23,7 +36,59 @@ export interface VectorizedChunk extends DocumentChunk {
 
 class VectorizationService {
   constructor() {
-    console.log('📄 VectorizationService inicializado (SIN vectorización - solo extracción de texto)');
+    console.log('🤖 VectorizationService inicializado con OpenAI');
+    console.log(`📊 Modelo: ${EMBEDDING_MODEL} (1536 dimensiones)`);
+  }
+
+  /**
+   * Genera embedding usando OpenAI
+   */
+  async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      // Truncar texto si excede el límite (8191 tokens ≈ 32,764 caracteres)
+      const truncatedText = text.substring(0, MAX_TOKENS * 4);
+
+      const response = await openai.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: truncatedText,
+        encoding_format: 'float',
+      });
+
+      return response.data[0].embedding;
+    } catch (error) {
+      console.error('❌ Error generando embedding con OpenAI:', error);
+      throw new Error(`Error en OpenAI embeddings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Divide texto en chunks con overlap
+   */
+  chunkText(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): DocumentChunk[] {
+    const chunks: DocumentChunk[] = [];
+    let startIndex = 0;
+    let chunkIndex = 0;
+
+    while (startIndex < text.length) {
+      const endIndex = Math.min(startIndex + chunkSize, text.length);
+      const chunkText = text.substring(startIndex, endIndex);
+
+      chunks.push({
+        text: chunkText,
+        index: chunkIndex,
+        metadata: {
+          startChar: startIndex,
+          endChar: endIndex,
+          length: chunkText.length,
+        },
+      });
+
+      chunkIndex++;
+      startIndex += chunkSize - overlap;
+    }
+
+    console.log(`📦 Texto dividido en ${chunks.length} chunks (${chunkSize} chars, overlap ${overlap})`);
+    return chunks;
   }
 
   /**
@@ -35,7 +100,7 @@ class VectorizationService {
 
       // Normalizar el tipo de archivo
       const normalizedType = fileType.toLowerCase();
-      
+
       switch (normalizedType) {
         case 'application/pdf':
         case 'pdf':
@@ -65,52 +130,142 @@ class VectorizationService {
   }
 
   /**
-   * Procesa un documento subido: SOLO extrae texto (SIN vectorización)
+   * Procesa y vectoriza un documento completo
    */
   async processDocument(documentId: string, filePath: string, fileType: string): Promise<void> {
     try {
-      console.log(`📄 Procesando documento ${documentId} (SIN vectorización)...`);
+      console.log(`🚀 Procesando documento ${documentId} con vectorización OpenAI...`);
 
       // Actualizar estado a PROCESSING
       await prisma.document.update({
         where: { id: documentId },
-        data: { status: 'PROCESSING' }
+        data: { status: 'PROCESSING' },
       });
 
-      // Solo extraer texto sin vectorizar
+      // 1. Extraer texto del documento
       const extractedText = await this.extractTextFromDocument(filePath, fileType);
-      
-      // Marcar documento como READY directamente
+      console.log(`📄 Texto extraído: ${extractedText.length} caracteres`);
+
+      if (!extractedText || extractedText.trim().length === 0) {
+        throw new Error('No se pudo extraer texto del documento');
+      }
+
+      // 2. Dividir en chunks
+      const chunks = this.chunkText(extractedText);
+
+      // 3. Vectorizar cada chunk y guardar en BD
+      console.log(`🤖 Vectorizando ${chunks.length} chunks con OpenAI...`);
+
+      for (const chunk of chunks) {
+        try {
+          // Generar embedding
+          const embedding = await this.generateEmbedding(chunk.text);
+
+          // Guardar en la base de datos
+          await prisma.$executeRaw`
+            INSERT INTO document_vectors (
+              id, 
+              document_id, 
+              chunk_index, 
+              chunk_text, 
+              embedding, 
+              vector,
+              metadata,
+              created_at,
+              updated_at
+            ) VALUES (
+              gen_random_uuid()::text,
+              ${documentId}::text,
+              ${chunk.index}::integer,
+              ${chunk.text}::text,
+              ${JSON.stringify(embedding)}::vector(1536),
+              ${JSON.stringify(embedding)}::text,
+              ${JSON.stringify(chunk.metadata)}::text,
+              NOW(),
+              NOW()
+            )
+          `;
+
+          console.log(`✅ Chunk ${chunk.index + 1}/${chunks.length} vectorizado`);
+
+          // Rate limiting: pequeña pausa entre requests a OpenAI
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } catch (error) {
+          console.error(`❌ Error vectorizando chunk ${chunk.index}:`, error);
+          // Continuar con los demás chunks
+        }
+      }
+
+      // 4. Actualizar documento como VECTORIZED
       await prisma.document.update({
         where: { id: documentId },
         data: {
-          status: 'READY',
+          status: 'VECTORIZED',
           content: extractedText,
-          chunks: JSON.stringify([extractedText]), // Un solo chunk con todo el texto
+          chunks: JSON.stringify(chunks.map((c) => ({ text: c.text, index: c.index }))),
         },
       });
 
-      console.log(`✅ Documento ${documentId} procesado y marcado como READY (SIN vectorización)`);
-
+      console.log(`🎉 Documento ${documentId} procesado y vectorizado exitosamente`);
     } catch (error) {
-      console.error(`Error en el procesamiento del documento ${documentId}:`, error);
+      console.error(`❌ Error procesando documento ${documentId}:`, error);
+
       await prisma.document.update({
         where: { id: documentId },
-        data: { 
+        data: {
           status: 'ERROR',
-          content: `Error en procesamiento: ${error instanceof Error ? error.message : 'Error desconocido'}`
+          content: `Error en procesamiento: ${error instanceof Error ? error.message : 'Error desconocido'}`,
         },
       });
+
       throw error;
     }
   }
 
   /**
-   * Método dummy para compatibilidad - no hace nada
+   * Re-vectoriza un documento existente
    */
-  async vectorizeDocument(documentId: string, filePath: string, fileType: string): Promise<VectorizedChunk[]> {
-    console.log(`⚠️ Vectorización desactivada para documento ${documentId}`);
-    return [];
+  async revectorizeDocument(documentId: string): Promise<void> {
+    console.log(`🔄 Re-vectorizando documento ${documentId}...`);
+
+    // Eliminar vectores existentes
+    await prisma.documentVector.deleteMany({
+      where: { documentId },
+    });
+
+    // Obtener el documento
+    const document = await prisma.document.findUnique({
+      where: { id: documentId },
+    });
+
+    if (!document || !document.content) {
+      throw new Error('Documento no encontrado o sin contenido');
+    }
+
+    // Procesar chunks desde el contenido almacenado
+    const chunks = this.chunkText(document.content);
+
+    for (const chunk of chunks) {
+      const embedding = await this.generateEmbedding(chunk.text);
+
+      await prisma.$executeRaw`
+        INSERT INTO document_vectors (
+          id, document_id, chunk_index, chunk_text, embedding, vector, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid()::text, ${documentId}, ${chunk.index}, ${chunk.text}, 
+          ${JSON.stringify(embedding)}::vector(1536), ${JSON.stringify(embedding)}, NOW(), NOW()
+        )
+      `;
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'VECTORIZED' },
+    });
+
+    console.log(`✅ Documento ${documentId} re-vectorizado`);
   }
 }
 

@@ -174,14 +174,15 @@ model Document {
 }
 
 model DocumentVector {
-  id          String   @id @default(cuid())
+  id          String                 @id @default(cuid())
   documentId  String
-  chunkIndex  Int      // Índice del chunk en el documento
-  chunkText   String   // Texto del chunk
-  vector      String   // Vector embeddings como JSON string
-  metadata    String?  // Metadatos adicionales como JSON
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  chunkIndex  Int                    // Índice del chunk en el documento
+  chunkText   String                 // Texto del chunk
+  embedding   Unsupported("vector(1536)")?  // Vector de OpenAI (1536 dimensiones) - pgvector
+  vector      String?                // Backup del vector como JSON string (opcional)
+  metadata    String?                // Metadatos adicionales como JSON
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
 
   // Relations
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)

@@ -399,9 +399,9 @@ export const searchDocuments = async (
         results: searchResults.map(result => ({
           document: result.document,
           chunk: {
-            text: result.chunk.text,
-            index: result.chunk.index,
-            metadata: result.chunk.metadata
+            id: result.chunkId,
+            text: result.chunkText,
+            index: result.chunkIndex
           },
           similarity: result.similarity,
           relevanceScore: result.relevanceScore
@@ -456,27 +456,75 @@ export const getKnowledgeCenterStats = async (
   next: NextFunction
 ) => {
   try {
-    // Obtener estadísticas básicas del centro de conocimiento
-    const totalDocuments = await prisma.document.count({
+    const teacherId = req.user!.id;
+    const schoolId = req.user!.schoolId;
+
+    // Estadísticas por estado
+    const documentsByStatus = await prisma.document.groupBy({
+      by: ['status'],
       where: {
-        teacherId: req.user!.id,
-        schoolId: req.user!.schoolId,
-        status: 'READY',
+        teacherId,
+        schoolId,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    // Estadísticas por categoría
+    const documentsByCategory = await prisma.document.groupBy({
+      by: ['category'],
+      where: {
+        teacherId,
+        schoolId,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    // Total de documentos
+    const totalDocuments = await prisma.document.count({
+      where: { teacherId, schoolId },
+    });
+
+    // Documentos vectorizados
+    const vectorizedDocuments = await prisma.document.count({
+      where: {
+        teacherId,
+        schoolId,
+        status: 'VECTORIZED',
+      },
+    });
+
+    // Total de chunks vectorizados
+    const totalChunks = await prisma.documentVector.count({
+      where: {
+        document: {
+          teacherId,
+          schoolId,
+        },
       },
     });
 
     const stats = {
       totalDocuments,
-      vectorizedDocuments: 0, // Sin vectorización
-      totalChunks: totalDocuments, // Cada documento es un chunk
-      categories: [],
+      vectorizedDocuments,
+      totalChunks,
+      documentsByStatus: documentsByStatus.map(s => ({
+        status: s.status,
+        count: s._count.id,
+      })),
+      documentsByCategory: documentsByCategory.map(c => ({
+        category: c.category || 'Sin categoría',
+        count: c._count.id,
+      })),
     };
 
     res.json({
       success: true,
-      data: stats
+      data: stats,
     });
-
   } catch (error) {
     next(error);
   }
