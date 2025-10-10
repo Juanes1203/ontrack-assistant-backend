@@ -19,6 +19,10 @@ const MAX_TOKENS = parseInt(process.env.OPENAI_MAX_TOKENS || '8191');
 const CHUNK_SIZE = 1000; // caracteres por chunk
 const CHUNK_OVERLAP = 200; // overlap entre chunks
 
+// Límites de seguridad para prevenir sobrecarga
+const MAX_CHUNKS_PER_DOCUMENT = 50; // Máximo 50 chunks por documento (~50KB de texto)
+const RATE_LIMIT_DELAY = 300; // 300ms entre requests a OpenAI (más seguro que 100ms)
+
 export interface DocumentChunk {
   text: string;
   index: number;
@@ -151,7 +155,13 @@ class VectorizationService {
       }
 
       // 2. Dividir en chunks
-      const chunks = this.chunkText(extractedText);
+      let chunks = this.chunkText(extractedText);
+
+      // Límite de seguridad: prevenir documentos muy grandes
+      if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
+        console.warn(`⚠️ Documento muy grande (${chunks.length} chunks). Limitando a ${MAX_CHUNKS_PER_DOCUMENT} para prevenir sobrecarga`);
+        chunks = chunks.slice(0, MAX_CHUNKS_PER_DOCUMENT);
+      }
 
       // 3. Vectorizar cada chunk y guardar en BD
       console.log(`🤖 Vectorizando ${chunks.length} chunks con OpenAI...`);
@@ -188,8 +198,8 @@ class VectorizationService {
 
           console.log(`✅ Chunk ${chunk.index + 1}/${chunks.length} vectorizado`);
 
-          // Rate limiting: pequeña pausa entre requests a OpenAI
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          // Rate limiting: pausa entre requests a OpenAI (previene sobrecarga)
+          await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
         } catch (error) {
           console.error(`❌ Error vectorizando chunk ${chunk.index}:`, error);
           // Continuar con los demás chunks
@@ -257,7 +267,7 @@ class VectorizationService {
         )
       `;
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY));
     }
 
     await prisma.document.update({
