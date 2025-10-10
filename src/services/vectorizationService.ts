@@ -175,14 +175,14 @@ class VectorizationService {
           await prisma.$executeRaw`
             INSERT INTO document_vectors (
               id, 
-              document_id, 
-              chunk_index, 
-              chunk_text, 
+              "documentId", 
+              "chunkIndex", 
+              "chunkText", 
               embedding, 
               vector,
               metadata,
-              created_at,
-              updated_at
+              "createdAt",
+              "updatedAt"
             ) VALUES (
               gen_random_uuid()::text,
               ${documentId}::text,
@@ -260,7 +260,7 @@ class VectorizationService {
 
       await prisma.$executeRaw`
         INSERT INTO document_vectors (
-          id, document_id, chunk_index, chunk_text, embedding, vector, created_at, updated_at
+          id, "documentId", "chunkIndex", "chunkText", embedding, vector, "createdAt", "updatedAt"
         ) VALUES (
           gen_random_uuid()::text, ${documentId}, ${chunk.index}, ${chunk.text}, 
           ${JSON.stringify(embedding)}::vector(1536), ${JSON.stringify(embedding)}, NOW(), NOW()
