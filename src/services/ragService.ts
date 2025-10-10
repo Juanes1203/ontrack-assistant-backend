@@ -68,18 +68,18 @@ class RAGService {
       const results: any[] = await prisma.$queryRaw`
         SELECT 
           dv.id as chunk_id,
-          dv.chunk_text,
-          dv.chunk_index,
+          dv."chunkText" as chunk_text,
+          dv."chunkIndex" as chunk_index,
           d.id as document_id,
           d.title as document_title,
           d.category as document_category,
-          d.teacher_id,
-          d.school_id,
+          d."teacherId" as teacher_id,
+          d."schoolId" as school_id,
           1 - (dv.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) as similarity
         FROM document_vectors dv
-        JOIN documents d ON d.id = dv.document_id
-        WHERE d.teacher_id = ${teacherId}
-          AND d.school_id = ${schoolId}
+        JOIN documents d ON d.id = dv."documentId"
+        WHERE d."teacherId" = ${teacherId}
+          AND d."schoolId" = ${schoolId}
           AND d.status = 'VECTORIZED'
           AND dv.embedding IS NOT NULL
           AND 1 - (dv.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) > ${SIMILARITY_THRESHOLD}
