@@ -21,6 +21,7 @@ router.use(authenticate);
 
 // Document management routes
 router.post('/upload', uploadMiddleware, uploadDocument);
+router.post('/', uploadMiddleware, uploadDocument); // Alias para compatibilidad con frontend
 router.get('/', getUserDocuments);
 router.get('/search', searchDocuments);
 router.get('/similar', getSimilarDocuments);
