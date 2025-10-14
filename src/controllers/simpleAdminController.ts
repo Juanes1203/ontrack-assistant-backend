@@ -78,3 +78,79 @@ export const getAllUsers = async (
     });
   }
 };
+
+export const createTeacher = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
+  try {
+    const { email, password, firstName, lastName, schoolId } = req.body;
+
+    // Validar que el usuario autenticado sea SUPER_ADMIN
+    if (req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo los super administradores pueden crear profesores'
+      });
+    }
+
+    // Validar campos requeridos
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email, contraseña, nombre y apellido son requeridos'
+      });
+    }
+
+    // Verificar si el email ya existe
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'El email ya está registrado'
+      });
+    }
+
+    // Encriptar contraseña
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Crear el profesor
+    const teacher = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        role: 'TEACHER',
+        schoolId: schoolId || req.user.id, // Si no se proporciona schoolId, usar el del super admin
+        isActive: true
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        schoolId: true,
+        isActive: true,
+        createdAt: true
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Profesor creado exitosamente',
+      data: teacher
+    });
+
+  } catch (error) {
+    console.error('Error creating teacher:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor'
+    });
+  }
+};
