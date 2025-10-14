@@ -48,7 +48,7 @@ export const processRecordingWithAnalysis = async (
   next: NextFunction
 ) => {
   try {
-    const { classId, transcript, duration, metadata } = req.body;
+    const { classId, transcript, duration, metadata, title, description, isLive = false } = req.body;
 
     // Verify that the class belongs to the teacher
     const classRecord = await prisma.class.findFirst({
@@ -73,21 +73,25 @@ export const processRecordingWithAnalysis = async (
         teacherId: req.user!.id,
         transcript: transcript || '',
         duration: duration || 0,
+        title: title || `${classRecord.name} - ${new Date().toLocaleString()}`,
+        description: description || '',
+        status: isLive ? 'IN_PROGRESS' : 'COMPLETED',
         recordingUrl: null // Will be updated if file is uploaded
       }
     });
 
-    // Create AI analysis
-    const analysis = await prisma.aIAnalysis.create({
-      data: {
-        recordingId: recording.id,
-        status: 'PENDING',
-        analysisData: JSON.stringify({})
-      }
-    });
+    // Create AI analysis only if not live recording
+    let analysis = null;
+    if (!isLive) {
+      analysis = await prisma.aIAnalysis.create({
+        data: {
+          recordingId: recording.id,
+          status: 'PENDING',
+          analysisData: JSON.stringify({})
+        }
+      });
+    }
 
-    // Start AI analysis in background
-    // This will be handled by the analysis controller
     res.status(201).json({
       success: true,
       data: {
@@ -95,16 +99,21 @@ export const processRecordingWithAnalysis = async (
           id: recording.id,
           classId: recording.classId,
           teacherId: recording.teacherId,
+          title: recording.title,
+          description: recording.description,
           transcript: recording.transcript,
           duration: recording.duration,
-          createdAt: recording.createdAt
+          status: recording.status,
+          createdAt: recording.createdAt,
+          className: classRecord.name
         },
-        analysis: {
+        analysis: analysis ? {
           id: analysis.id,
           status: analysis.status
-        }
+        } : null,
+        isLive
       },
-      message: 'Recording created and analysis started'
+      message: isLive ? 'Live recording started' : 'Recording created and analysis started'
     });
 
   } catch (error) {
@@ -388,6 +397,263 @@ export const downloadRecording = async (
     next(error);
   }
 };
+
+// New endpoint to get transcript with better formatting
+export const getRecordingTranscript = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        transcript: true,
+        title: true,
+        duration: true,
+        status: true,
+        createdAt: true,
+        teacherId: true,
+        class: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    // Format transcript for better display
+    const formattedTranscript = recording.transcript ? {
+      raw: recording.transcript,
+      formatted: formatTranscriptForDisplay(recording.transcript),
+      wordCount: recording.transcript.split(' ').length,
+      estimatedReadingTime: Math.ceil(recording.transcript.split(' ').length / 200) // 200 words per minute
+    } : null;
+
+    res.json({
+      success: true,
+      data: {
+        recording: {
+          id: recording.id,
+          title: recording.title,
+          duration: recording.duration,
+          status: recording.status,
+          createdAt: recording.createdAt,
+          className: recording.class.name
+        },
+        transcript: formattedTranscript
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// New endpoint to update transcript in real-time during recording
+export const updateRecordingTranscript = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const { transcript, confidence, isLive = false } = req.body;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    // Update transcript
+    const updatedRecording = await prisma.recording.update({
+      where: { id },
+      data: {
+        transcript: transcript || recording.transcript,
+        ...(isLive && { status: 'IN_PROGRESS' })
+      },
+      select: {
+        id: true,
+        transcript: true,
+        status: true,
+        updatedAt: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        recording: updatedRecording,
+        confidence: confidence || null,
+        isLive
+      },
+      message: isLive ? 'Live transcript updated' : 'Transcript updated'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// New endpoint to get live recording status for sidebar
+export const getLiveRecordingStatus = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { classId } = req.params;
+
+    // Get active recordings for the class
+    const activeRecordings = await prisma.recording.findMany({
+      where: {
+        classId,
+        teacherId: req.user!.id,
+        status: 'IN_PROGRESS'
+      },
+      select: {
+        id: true,
+        title: true,
+        transcript: true,
+        duration: true,
+        createdAt: true,
+        class: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        activeRecordings,
+        hasActiveRecording: activeRecordings.length > 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// New endpoint to finish live recording and start analysis
+export const finishLiveRecording = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const { finalTranscript, duration } = req.body;
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    // Update recording with final transcript and mark as completed
+    const updatedRecording = await prisma.recording.update({
+      where: { id },
+      data: {
+        transcript: finalTranscript || recording.transcript,
+        duration: duration || recording.duration,
+        status: 'COMPLETED'
+      },
+      include: {
+        class: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
+
+    // Create AI analysis
+    const analysis = await prisma.aIAnalysis.create({
+      data: {
+        recordingId: recording.id,
+        status: 'PENDING',
+        analysisData: JSON.stringify({
+          status: 'pending',
+          message: 'Análisis en progreso...'
+        })
+      }
+    });
+
+    // Start AI analysis in background
+    try {
+      const { processRecordingAnalysis } = await import('./analysisController');
+      processRecordingAnalysis(recording.id, finalTranscript || recording.transcript).catch(error => {
+        console.error('Error starting analysis:', error);
+      });
+    } catch (error) {
+      console.error('Error importing analysis controller:', error);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        recording: {
+          id: updatedRecording.id,
+          title: updatedRecording.title,
+          description: updatedRecording.description,
+          transcript: updatedRecording.transcript,
+          duration: updatedRecording.duration,
+          status: updatedRecording.status,
+          className: updatedRecording.class.name,
+          createdAt: updatedRecording.createdAt
+        },
+        analysis: {
+          id: analysis.id,
+          status: analysis.status
+        }
+      },
+      message: 'Live recording finished and analysis started'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Helper function to format transcript for better display
+function formatTranscriptForDisplay(transcript: string): string {
+  if (!transcript) return '';
+  
+  return transcript
+    .split('.')
+    .map(sentence => sentence.trim())
+    .filter(sentence => sentence.length > 0)
+    .map(sentence => sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.')
+    .join(' ');
+}
 
 // New function to upload and transcribe audio
 export const uploadAndTranscribeAudio = async (

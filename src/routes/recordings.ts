@@ -8,7 +8,11 @@ import {
   downloadRecording,
   uploadMiddleware,
   processRecordingWithAnalysis,
-  uploadAndTranscribeAudio
+  uploadAndTranscribeAudio,
+  getRecordingTranscript,
+  updateRecordingTranscript,
+  getLiveRecordingStatus,
+  finishLiveRecording
 } from '../controllers/recordingController';
 import { authenticate, authorizeResource } from '../middleware/auth';
 import { validate, createRecordingSchema, updateRecordingSchema } from '../utils/validation';
@@ -41,5 +45,17 @@ router.delete('/:id', deleteRecording);
 
 // Download recording file
 router.get('/:id/download', downloadRecording);
+
+// Get formatted transcript for better display
+router.get('/:id/transcript', getRecordingTranscript);
+
+// Update transcript (for live updates during recording)
+router.patch('/:id/transcript', updateRecordingTranscript);
+
+// Get live recording status for sidebar
+router.get('/class/:classId/live-status', getLiveRecordingStatus);
+
+// Finish live recording and start analysis
+router.post('/:id/finish', finishLiveRecording);
 
 export default router;
