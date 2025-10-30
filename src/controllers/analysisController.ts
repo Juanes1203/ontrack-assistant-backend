@@ -437,9 +437,45 @@ export const getAnalysis = async (
       throw new AppError('Access denied', 403);
     }
 
+    // Parse analysisData for client convenience and compute fallback score if needed
+    let parsedAnalysisData: any = null;
+    try {
+      parsedAnalysisData = analysis.analysisData ? JSON.parse(analysis.analysisData as unknown as string) : null;
+    } catch (_) {
+      parsedAnalysisData = null;
+    }
+
+    // Compute a fallback overallScore (/10) if not present but sub-scores exist
+    if (parsedAnalysisData && (!parsedAnalysisData.evaluation || parsedAnalysisData.evaluation.overallScore == null)) {
+      const scores: number[] = [];
+      const ecdf = parsedAnalysisData.ecdfAnalysis;
+      if (ecdf) {
+        if (typeof ecdf.structure?.score === 'number') scores.push(ecdf.structure.score);
+        if (typeof ecdf.content?.score === 'number') scores.push(ecdf.content.score);
+        if (typeof ecdf.dynamics?.score === 'number') scores.push(ecdf.dynamics.score);
+        if (typeof ecdf.formation?.score === 'number') scores.push(ecdf.formation.score);
+      }
+      if (scores.length > 0) {
+        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+        parsedAnalysisData.evaluation = parsedAnalysisData.evaluation || {};
+        parsedAnalysisData.evaluation.overallScore = Number(avg.toFixed(1));
+      }
+    }
+
     res.json({
       success: true,
-      data: analysis
+      data: {
+        ...analysis,
+        // Provide a parsed version for the frontend to use directly
+        analysisData: analysis.analysisData,
+        analysisDataParsed: parsedAnalysisData,
+        // Provide a friendly status message for pending state
+        friendlyStatusMessage: analysis.status === 'PENDING'
+          ? 'Tu análisis se está generando. Esto puede tardar unos minutos.'
+          : (analysis.status === 'FAILED'
+              ? 'El análisis no se pudo completar. Intenta nuevamente más tarde.'
+              : 'Análisis listo')
+      }
     });
   } catch (error) {
     next(error);
