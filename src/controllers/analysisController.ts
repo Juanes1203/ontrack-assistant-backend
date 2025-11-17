@@ -166,6 +166,66 @@ ${transcript}`;
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
       console.error('❌ Straico API error:', response.status, response.statusText, errorData);
+      
+      // Manejar errores temporales (502, 503, 504) con reintento
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        console.log('🔄 Error temporal de Straico API, intentando reintento...');
+        
+        // Reintentar una vez después de 3 segundos
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const retryResponse = await fetch(STRAICO_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${STRAICO_API_KEY}`,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        if (!retryResponse.ok) {
+          throw new Error(`Straico API error: ${retryResponse.status} ${retryResponse.statusText} - El servicio de análisis está temporalmente no disponible. Por favor intenta más tarde.`);
+        }
+        
+        // Si el reintento funcionó, continuar con la respuesta
+        const retryData: any = await retryResponse.json();
+        console.log('✅ Reintento exitoso, procesando respuesta...');
+        
+        const firstModelKey = Object.keys(retryData.data.completions)[0];
+        const completion = retryData.data.completions[firstModelKey].completion;
+        
+        if (!completion.choices?.[0]?.message?.content) {
+          throw new Error('Invalid response format from Straico API');
+        }
+
+        const analysisContent = completion.choices[0].message.content;
+        console.log('Analysis content received, length:', analysisContent.length);
+        
+        // Clean and parse the response
+        const cleanContent = analysisContent
+          .replace(/```json\n?|\n?```/g, '')
+          .replace(/^[\s\n]+|[\s\n]+$/g, '')
+          .replace(/[\u2018\u2019]/g, "'")
+          .replace(/[\u201C\u201D]/g, '"')
+          .replace(/^[^{]*({[\s\S]*})[^}]*$/, '$1');
+        
+        const analysisData = JSON.parse(cleanContent);
+        console.log('Successfully parsed analysis data');
+
+        // Update the analysis in the database
+        await prisma.aIAnalysis.update({
+          where: { id: analysisId },
+          data: {
+            analysisData: JSON.stringify(analysisData),
+            status: 'COMPLETED'
+          }
+        });
+
+        console.log('✅ Analysis completed and saved to database for analysisId:', analysisId);
+        return;
+      }
+      
       throw new Error(`Straico API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
     }
 
@@ -207,18 +267,33 @@ ${transcript}`;
   } catch (error) {
     console.error('Error in Straico analysis:', error);
     
+    // Determinar mensaje de error más amigable
+    let errorMessage = 'Error desconocido en el análisis de IA';
+    if (error instanceof Error) {
+      if (error.message.includes('502') || error.message.includes('503') || error.message.includes('504')) {
+        errorMessage = 'El servicio de análisis está temporalmente no disponible. Por favor intenta más tarde o revisa el análisis más adelante.';
+      } else if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
+        errorMessage = 'Error de conexión con el servicio de análisis. Por favor verifica tu conexión a internet.';
+      } else {
+        errorMessage = 'Error en el análisis de IA: ' + error.message;
+      }
+    }
+    
     // Update analysis with error status
     await prisma.aIAnalysis.update({
       where: { id: analysisId },
       data: {
         status: 'FAILED',
         analysisData: JSON.stringify({
-          error: 'Error en el análisis de IA: ' + (error instanceof Error ? error.message : 'Unknown error')
+          error: errorMessage,
+          timestamp: new Date().toISOString()
         })
       }
     });
     
-    throw error;
+    // No lanzar el error para que no falle todo el proceso
+    // Solo loguear el error
+    console.error('❌ Analysis failed but recording and transcription are saved:', errorMessage);
   } finally {
     await prisma.$disconnect();
   }
