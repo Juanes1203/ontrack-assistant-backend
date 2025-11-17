@@ -50,9 +50,9 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware - Aumentado para permitir transcripts largos (2+ horas)
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Logging middleware
 if (process.env.NODE_ENV === 'development') {
@@ -100,12 +100,20 @@ if (sslKeyExists && sslCertExists) {
     cert: fs.readFileSync(sslCertPath)
   };
 
-  https.createServer(options, app).listen(HTTPS_PORT, () => {
+  const httpsServer = https.createServer(options, app);
+  
+  // Configurar timeouts para permitir grabaciones largas (2 horas - mínimo 1.5 horas)
+  httpsServer.timeout = 2 * 60 * 60 * 1000; // 2 horas en milisegundos (120 minutos)
+  httpsServer.keepAliveTimeout = 2 * 60 * 60 * 1000; // 2 horas
+  httpsServer.headersTimeout = 2 * 60 * 60 * 1000 + 60000; // 2 horas + 1 minuto (debe ser mayor que keepAliveTimeout)
+  
+  httpsServer.listen(HTTPS_PORT, () => {
     console.log(`🔒 HTTPS Server running on port ${HTTPS_PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'https://localhost:8080'}`);
     console.log(`📝 Health check: https://localhost:${HTTPS_PORT}/health`);
     console.log(`🔐 SSL Certificates loaded from: ${sslCertPath}`);
+    console.log(`⏱️  Server timeout configured for long recordings: 2 hours (supports 1.5+ hour recordings)`);
   });
 } else {
   console.warn('⚠️  SSL certificates not found. Starting HTTP server instead.');
@@ -114,12 +122,18 @@ if (sslKeyExists && sslCertExists) {
   console.warn('   To enable HTTPS, place your SSL certificates in the certs/ directory');
   
   // Fallback to HTTP
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     console.log(`🚀 HTTP Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:8080'}`);
     console.log(`📝 Health check: http://localhost:${PORT}/health`);
   });
+  
+  // Configurar timeouts para permitir grabaciones largas (2 horas - mínimo 1.5 horas)
+  httpServer.timeout = 2 * 60 * 60 * 1000; // 2 horas en milisegundos (120 minutos)
+  httpServer.keepAliveTimeout = 2 * 60 * 60 * 1000; // 2 horas
+  httpServer.headersTimeout = 2 * 60 * 60 * 1000 + 60000; // 2 horas + 1 minuto (debe ser mayor que keepAliveTimeout)
+  console.log(`⏱️  Server timeout configured for long recordings: 2 hours (supports 1.5+ hour recordings)`);
 }
 
 export default app;

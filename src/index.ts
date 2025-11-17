@@ -52,9 +52,9 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware - Aumentado para permitir transcripts largos (2+ horas)
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Logging middleware
 if (process.env.NODE_ENV === 'development') {
@@ -89,12 +89,17 @@ app.use(notFound);
 // Error handling middleware
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
+// Start server with increased timeout for long recordings
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:8080'}`);
   console.log(`📝 Health check: http://localhost:${PORT}/health`);
 });
+
+// Configurar timeout del servidor para permitir grabaciones largas (2 horas - mínimo 1.5 horas)
+server.timeout = 2 * 60 * 60 * 1000; // 2 horas en milisegundos (120 minutos)
+server.keepAliveTimeout = 2 * 60 * 60 * 1000; // 2 horas
+server.headersTimeout = 2 * 60 * 60 * 1000 + 60000; // 2 horas + 1 minuto (debe ser mayor que keepAliveTimeout)
 
 export default app;
