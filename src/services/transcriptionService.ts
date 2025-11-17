@@ -78,22 +78,25 @@ export class TranscriptionService {
     } catch (error: any) {
       console.error('Error in transcription:', error);
       
-      // Handle specific OpenAI API errors
-      if (error?.response?.status === 400) {
-        const errorMessage = error?.response?.data?.error?.message || error.message || 'Unknown error';
-        if (errorMessage.includes('could not be decoded') || errorMessage.includes('format is not supported')) {
+      // Handle specific OpenAI API errors - OpenAI SDK uses different error structure
+      // Check for status 400 in multiple possible locations
+      const status = error?.status || error?.response?.status || error?.statusCode;
+      const errorMessage = error?.error?.message || error?.response?.data?.error?.message || error?.message || 'Unknown error';
+      
+      if (status === 400) {
+        if (errorMessage.includes('could not be decoded') || errorMessage.includes('format is not supported') || errorMessage.includes('format not supported')) {
           throw new Error(`Audio format not supported: The audio file format could not be decoded by Whisper API. Please ensure the file is a valid audio format (mp3, wav, mp4, webm, etc.)`);
         }
         throw new Error(`Transcription failed (400): ${errorMessage}`);
-      } else if (error?.response?.status === 413) {
+      } else if (status === 413 || error?.response?.status === 413) {
         throw new Error('Audio file too large: The file exceeds the maximum size limit');
-      } else if (error?.response?.status === 429) {
+      } else if (status === 429 || error?.response?.status === 429) {
         throw new Error('Rate limit exceeded: Too many transcription requests. Please try again later');
       } else if (error?.code === 'ENOTFOUND' || error?.code === 'ECONNREFUSED') {
         throw new Error('Network error: Could not connect to transcription service');
       }
       
-      throw new Error(`Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Transcription failed: ${errorMessage}`);
     }
   }
 

@@ -894,9 +894,15 @@ export const transcribeAudioChunk = async (
         throw new AppError('Transcription timeout - audio chunk may be too long', 504);
       } else if (transcriptionError.message?.includes('API key')) {
         throw new AppError('Transcription service configuration error', 500);
-      } else if (transcriptionError.message?.includes('format not supported') || transcriptionError.message?.includes('could not be decoded')) {
+      } else if (
+        transcriptionError.message?.includes('format not supported') || 
+        transcriptionError.message?.includes('could not be decoded') ||
+        transcriptionError.message?.includes('format is not supported') ||
+        transcriptionError.message?.toLowerCase().includes('decoded') ||
+        transcriptionError.message?.toLowerCase().includes('format')
+      ) {
         // Log but don't fail completely - return empty transcript for this chunk
-        console.warn(`[${new Date().toISOString()}] ⚠️ Audio format not supported for chunk, skipping transcription`);
+        console.warn(`[${new Date().toISOString()}] ⚠️ Audio format not supported for chunk, skipping transcription. Error: ${transcriptionError.message}`);
         res.json({
           success: true,
           data: {
