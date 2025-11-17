@@ -23,8 +23,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Trust proxy - necesario cuando hay un proxy reverso (Nginx) delante
+// Configurado para confiar solo en el primer proxy (Nginx) para seguridad
 // Esto permite que Express confíe en los headers X-Forwarded-* del proxy
-app.set('trust proxy', true);
+app.set('trust proxy', 1); // Solo confiar en el primer proxy (Nginx)
 
 // Security middleware
 app.use(helmet());
@@ -51,6 +52,12 @@ const limiter = rateLimit({
   skip: (req) => {
     return process.env.NODE_ENV === 'development' && 
            (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1');
+  },
+  // Configurar para usar X-Forwarded-For de forma segura con trust proxy
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false // Desactivar validación ya que configuramos trust proxy manualmente
   }
 });
 
