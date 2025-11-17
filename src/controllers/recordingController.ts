@@ -768,3 +768,78 @@ export const uploadAndTranscribeAudio = async (
     next(error);
   }
 };
+
+// New endpoint to transcribe audio chunks in real-time using Whisper
+export const transcribeAudioChunk = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      throw new AppError('No audio chunk provided', 400);
+    }
+
+    const recording = await prisma.recording.findUnique({
+      where: { id }
+    });
+
+    if (!recording) {
+      throw new AppError('Recording not found', 404);
+    }
+
+    // Check access permissions
+    if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
+    }
+
+    const filePath = path.join(process.cwd(), 'uploads', 'recordings', req.file.filename);
+    
+    try {
+      // Transcribe the audio chunk using Whisper
+      const transcriptionResult = await TranscriptionService.transcribeAudio(filePath);
+      
+      // Get current transcript
+      const currentTranscript = recording.transcript || '';
+      
+      // Append new transcription (with space separator)
+      const updatedTranscript = currentTranscript 
+        ? `${currentTranscript} ${transcriptionResult.text}`.trim()
+        : transcriptionResult.text;
+
+      // Update recording with accumulated transcript
+      await prisma.recording.update({
+        where: { id },
+        data: {
+          transcript: updatedTranscript,
+          status: 'IN_PROGRESS'
+        }
+      });
+
+      // Clean up temporary file
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          transcript: transcriptionResult.text,
+          fullTranscript: updatedTranscript,
+          language: transcriptionResult.language
+        },
+        message: 'Audio chunk transcribed successfully'
+      });
+    } catch (transcriptionError) {
+      // Clean up temporary file even on error
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      throw transcriptionError;
+    }
+  } catch (error) {
+    next(error);
+  }
+};

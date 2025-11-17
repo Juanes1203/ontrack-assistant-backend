@@ -12,7 +12,8 @@ import {
   getRecordingTranscript,
   updateRecordingTranscript,
   getLiveRecordingStatus,
-  finishLiveRecording
+  finishLiveRecording,
+  transcribeAudioChunk
 } from '../controllers/recordingController';
 import { authenticate, authorizeResource } from '../middleware/auth';
 import { validate, createRecordingSchema, updateRecordingSchema } from '../utils/validation';
@@ -57,5 +58,8 @@ router.get('/class/:classId/live-status', getLiveRecordingStatus);
 
 // Finish live recording and start analysis
 router.post('/:id/finish', finishLiveRecording);
+
+// Transcribe audio chunk in real-time (for MediaRecorder-based transcription)
+router.post('/:id/transcribe-chunk', uploadMiddleware, transcribeAudioChunk);
 
 export default router;
