@@ -41,6 +41,9 @@ const upload = multer({
 
 export const uploadMiddleware = upload.single('recording');
 
+// Middleware específico para chunks de audio (acepta campo 'audio')
+export const uploadAudioChunkMiddleware = upload.single('audio');
+
 // New endpoint to process complete recording with AI analysis
 export const processRecordingWithAnalysis = async (
   req: AuthenticatedRequest,

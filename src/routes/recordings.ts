@@ -7,6 +7,7 @@ import {
   deleteRecording,
   downloadRecording,
   uploadMiddleware,
+  uploadAudioChunkMiddleware,
   processRecordingWithAnalysis,
   uploadAndTranscribeAudio,
   getRecordingTranscript,
@@ -60,6 +61,6 @@ router.get('/class/:classId/live-status', getLiveRecordingStatus);
 router.post('/:id/finish', finishLiveRecording);
 
 // Transcribe audio chunk in real-time (for MediaRecorder-based transcription)
-router.post('/:id/transcribe-chunk', uploadMiddleware, transcribeAudioChunk);
+router.post('/:id/transcribe-chunk', uploadAudioChunkMiddleware, transcribeAudioChunk);
 
 export default router;
