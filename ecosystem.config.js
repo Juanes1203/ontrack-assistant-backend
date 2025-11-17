@@ -23,10 +23,10 @@ module.exports = {
       min_uptime: '10s',    // Tiempo mínimo para considerar estable
       restart_delay: 4000,  // Espera 4s antes de reiniciar
       
-      // Logs
-      error_file: '/var/log/pm2/ontrack-backend-error.log',
-      out_file: '/var/log/pm2/ontrack-backend-out.log',
-      log_file: '/var/log/pm2/ontrack-backend.log',
+      // Logs - usar directorio home del usuario para evitar problemas de permisos
+      error_file: '/home/ubuntu/.pm2/logs/ontrack-backend-error.log',
+      out_file: '/home/ubuntu/.pm2/logs/ontrack-backend-out.log',
+      log_file: '/home/ubuntu/.pm2/logs/ontrack-backend.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       
       // Modo watch desactivado en producción
