@@ -778,31 +778,61 @@ export const transcribeAudioChunk = async (
   res: Response,
   next: NextFunction
 ) => {
+  let filePath: string | null = null;
+  
   try {
     const { id } = req.params;
     
+    console.log(`[${new Date().toISOString()}] 📥 Transcribe chunk request for recording: ${id}`);
+    
     if (!req.file) {
+      console.error('No audio chunk provided in request');
       throw new AppError('No audio chunk provided', 400);
     }
+
+    console.log(`File received: ${req.file.originalname}, size: ${req.file.size} bytes, mimetype: ${req.file.mimetype}`);
 
     const recording = await prisma.recording.findUnique({
       where: { id }
     });
 
     if (!recording) {
+      console.error(`Recording not found: ${id}`);
       throw new AppError('Recording not found', 404);
     }
 
     // Check access permissions
     if (recording.teacherId !== req.user!.id && req.user!.role !== 'ADMIN') {
+      console.error(`Access denied for user ${req.user!.id} to recording ${id}`);
       throw new AppError('Access denied', 403);
     }
 
-    const filePath = path.join(process.cwd(), 'uploads', 'recordings', req.file.filename);
+    filePath = path.join(process.cwd(), 'uploads', 'recordings', req.file.filename);
+    
+    // Verify file exists and has content
+    if (!fs.existsSync(filePath)) {
+      console.error(`File not found at path: ${filePath}`);
+      throw new AppError('Uploaded file not found on server', 500);
+    }
+
+    const fileStats = fs.statSync(filePath);
+    if (fileStats.size === 0) {
+      console.error(`Empty file received: ${filePath}`);
+      throw new AppError('Empty audio file provided', 400);
+    }
+
+    console.log(`[${new Date().toISOString()}] 🎤 Starting transcription for chunk: ${filePath} (${fileStats.size} bytes)`);
     
     try {
-      // Transcribe the audio chunk using Whisper
-      const transcriptionResult = await TranscriptionService.transcribeAudio(filePath);
+      // Transcribe the audio chunk using Whisper with timeout
+      const transcriptionPromise = TranscriptionService.transcribeAudio(filePath);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Transcription timeout after 60 seconds')), 60000)
+      );
+      
+      const transcriptionResult = await Promise.race([transcriptionPromise, timeoutPromise]) as any;
+      
+      console.log(`[${new Date().toISOString()}] ✅ Transcription completed: "${transcriptionResult.text.substring(0, 50)}..."`);
       
       // Get current transcript
       const currentTranscript = recording.transcript || '';
@@ -821,9 +851,16 @@ export const transcribeAudioChunk = async (
         }
       });
 
+      console.log(`[${new Date().toISOString()}] 💾 Recording updated with transcript (total length: ${updatedTranscript.length} chars)`);
+
       // Clean up temporary file
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`[${new Date().toISOString()}] 🗑️ Temporary file cleaned up: ${filePath}`);
+        }
+      } catch (cleanupError) {
+        console.warn(`Warning: Could not delete temporary file ${filePath}:`, cleanupError);
       }
 
       res.json({
@@ -835,16 +872,48 @@ export const transcribeAudioChunk = async (
         },
         message: 'Audio chunk transcribed successfully'
       });
-    } catch (transcriptionError) {
+    } catch (transcriptionError: any) {
       // Clean up temporary file even on error
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      try {
+        if (filePath && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (cleanupError) {
+        console.warn('Warning: Could not delete temporary file on error:', cleanupError);
       }
-      console.error('Error transcribing audio chunk:', transcriptionError);
-      throw transcriptionError;
+      
+      console.error(`[${new Date().toISOString()}] ❌ Error transcribing audio chunk:`, {
+        error: transcriptionError.message || transcriptionError,
+        stack: transcriptionError.stack,
+        recordingId: id,
+        filePath
+      });
+      
+      // Return a more specific error
+      if (transcriptionError.message?.includes('timeout')) {
+        throw new AppError('Transcription timeout - audio chunk may be too long', 504);
+      } else if (transcriptionError.message?.includes('API key')) {
+        throw new AppError('Transcription service configuration error', 500);
+      } else {
+        throw new AppError(`Transcription failed: ${transcriptionError.message || 'Unknown error'}`, 500);
+      }
     }
-  } catch (error) {
-    console.error('Error in transcribeAudioChunk:', error);
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] ❌ Error in transcribeAudioChunk:`, {
+      error: error.message || error,
+      stack: error.stack,
+      recordingId: req.params?.id
+    });
+    
+    // Clean up file if it still exists
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupError) {
+        console.warn('Warning: Could not delete temporary file in final catch:', cleanupError);
+      }
+    }
+    
     next(error);
   }
 };
