@@ -837,9 +837,11 @@ export const transcribeAudioChunk = async (
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
+      console.error('Error transcribing audio chunk:', transcriptionError);
       throw transcriptionError;
     }
   } catch (error) {
+    console.error('Error in transcribeAudioChunk:', error);
     next(error);
   }
 };
