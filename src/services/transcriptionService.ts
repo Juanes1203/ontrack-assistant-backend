@@ -38,8 +38,23 @@ export class TranscriptionService {
 
       // Create a readable stream from the file
       const audioFile = fs.createReadStream(filePath);
+      
+      // Determine file format from extension
+      const ext = path.extname(filePath).toLowerCase().slice(1); // Remove the dot
+      let fileFormat: 'flac' | 'm4a' | 'mp3' | 'mp4' | 'mpeg' | 'mpga' | 'oga' | 'ogg' | 'wav' | 'webm' | undefined;
+      
+      // Map extensions to Whisper-supported formats
+      if (['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'].includes(ext)) {
+        fileFormat = ext as any;
+      } else if (ext === 'weba') {
+        fileFormat = 'webm'; // .weba is webm audio
+      } else {
+        // Default to webm if unknown (MediaRecorder typically produces webm)
+        fileFormat = 'webm';
+      }
 
       // Transcribe using OpenAI Whisper
+      // Note: OpenAI automatically detects format, but we ensure the file extension is correct
       const transcription = await openai.audio.transcriptions.create({
         file: audioFile,
         model: 'whisper-1',
